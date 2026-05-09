@@ -40,7 +40,7 @@ export async function GET() {
           <Cell label="Cases" value={cases > 0 ? fmt(cases) : "—"} color="#ef4444" />
           <Cell label="WHO alerts" value={String(events.length)} color="#f59e0b" />
           <Cell label="Flagged" value={String(ob)} color="#a855f7" />
-          <Cell label="CFR" value={cfrPct > 0 ? fmtCfr(cfrPct) : "—"} color="#3b82f6" />
+          <Cell label="CFR" value={cfrPct != null && cfrPct > 0 ? fmtCfr(cfrPct) : "—"} color="#3b82f6" />
         </div>
 
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 40, fontSize: 18, color: "#9ca3af" }}>

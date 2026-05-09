@@ -25,7 +25,7 @@ export function riskScore(rows: CountrySnapshot[], r: CountrySnapshot): RiskScor
     ? (Math.log10(r.cases + 1) / Math.log10(maxCases + 1)) * 100
     : (r.status === "outbreak" ? 60 : 0);
 
-  const cfrPct = r.cases != null && r.deaths != null ? cfr(r.deaths, r.cases) : 0;
+  const cfrPct = r.cases != null && r.deaths != null ? (cfr(r.deaths, r.cases) ?? 0) : 0;
   const cfrPart = Math.min(100, (cfrPct / 50) * 100);
 
   const perMillion =

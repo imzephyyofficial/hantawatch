@@ -67,7 +67,17 @@ export async function fetchWhoEvents(): Promise<{ events: WhoEvent[]; fetchedAt:
     const json = (await res.json()) as { value?: WhoApiItem[] };
     const events = (json.value ?? [])
       .filter((it) => Boolean(it.Title) && Boolean(it.PublicationDate))
-      .filter((it) => !/^1\d{3}/.test(String(it.UrlName ?? ""))) // skip 1990s archive
+      .filter((it) => {
+        // Drop archive republications. WHO re-issued pre-2020 entries with a
+        // 2021 PublicationDate, so we also check the URL slug (which preserves
+        // the original year) and the title's leading year hint.
+        const slugYear = Number(String(it.UrlName ?? "").slice(0, 4));
+        if (Number.isFinite(slugYear) && slugYear < 2020) return false;
+        const titleYear = Number(String(it.Title ?? "").slice(0, 4));
+        if (Number.isFinite(titleYear) && titleYear < 2020) return false;
+        const pubYear = Number((it.PublicationDate ?? "").slice(0, 4));
+        return Number.isFinite(pubYear) && pubYear >= 2020;
+      })
       .map(parseEvent);
     return { events, fetchedAt, ok: true };
   } catch {

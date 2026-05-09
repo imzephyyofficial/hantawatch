@@ -15,7 +15,7 @@ function toCsv(rows: Awaited<ReturnType<typeof fetchLive>>["countries"]) {
         r.region,
         r.cases ?? "",
         r.deaths ?? "",
-        r.cases != null && r.deaths != null ? cfr(r.deaths, r.cases).toFixed(2) : "",
+        r.cases != null && r.deaths != null ? cfr(r.deaths, r.cases)!.toFixed(2) : "",
         r.strain ?? "",
         r.lastReport,
         r.status ?? "",
@@ -55,7 +55,7 @@ export async function GET(req: Request) {
 
   const data = rows.map((r) => ({
     ...r,
-    cfr_pct: r.cases != null && r.deaths != null ? +cfr(r.deaths, r.cases).toFixed(2) : null,
+    cfr_pct: r.cases != null && r.deaths != null ? +cfr(r.deaths, r.cases)!.toFixed(2) : null,
   }));
 
   return NextResponse.json(

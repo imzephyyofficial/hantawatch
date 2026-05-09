@@ -2,17 +2,23 @@ import type { CountrySnapshot } from "./sources";
 import type { StrainAggregate } from "./types";
 import { cfr } from "./format";
 
-export function totalCases(rows: CountrySnapshot[]) {
+export function totalCases(rows: CountrySnapshot[]): number {
   return rows.reduce((s, r) => s + (r.cases ?? 0), 0);
 }
 
-export function totalDeaths(rows: CountrySnapshot[]) {
+export function totalDeaths(rows: CountrySnapshot[]): number {
   return rows.reduce((s, r) => s + (r.deaths ?? 0), 0);
 }
 
-export function overallCfr(rows: CountrySnapshot[]) {
-  const c = totalCases(rows);
-  const d = totalDeaths(rows);
+/**
+ * Aggregate CFR across countries that publish *both* cases and deaths.
+ * Returns null when no row in the set publishes a death count.
+ */
+export function overallCfr(rows: CountrySnapshot[]): number | null {
+  const reporting = rows.filter((r) => r.cases != null && r.deaths != null);
+  if (reporting.length === 0) return null;
+  const c = reporting.reduce((s, r) => s + r.cases!, 0);
+  const d = reporting.reduce((s, r) => s + r.deaths!, 0);
   return cfr(d, c);
 }
 
@@ -23,7 +29,7 @@ export function outbreakRows(rows: CountrySnapshot[]) {
 export function highestCfr(rows: CountrySnapshot[], minCases = 3) {
   return rows
     .filter((r) => r.cases != null && r.cases >= minCases && r.deaths != null)
-    .map((r) => ({ row: r, pct: cfr(r.deaths!, r.cases!) }))
+    .map((r) => ({ row: r, pct: cfr(r.deaths!, r.cases!)! }))
     .sort((a, b) => b.pct - a.pct)[0];
 }
 
@@ -39,7 +45,7 @@ export function strainAggregates(rows: CountrySnapshot[]): StrainAggregate[] {
   }
   const out = Array.from(map.values());
   out.forEach((g) => {
-    g.cfr = cfr(g.deaths, g.cases);
+    g.cfr = cfr(g.deaths, g.cases) ?? 0;
   });
   return out.sort((a, b) => b.cases - a.cases);
 }
@@ -52,7 +58,7 @@ export function regionTotals(rows: CountrySnapshot[]) {
   return Array.from(map.entries()).map(([region, cases]) => ({ region, cases }));
 }
 
-export function regionCfr(rows: CountrySnapshot[], region: string) {
+export function regionCfr(rows: CountrySnapshot[], region: string): number | null {
   const sub = rows.filter((r) => r.region === region);
   return overallCfr(sub);
 }

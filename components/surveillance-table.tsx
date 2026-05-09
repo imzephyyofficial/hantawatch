@@ -86,7 +86,7 @@ export function SurveillanceTable({ data }: Props) {
           r.region,
           r.cases ?? "",
           r.deaths ?? "",
-          r.cases != null && r.deaths != null ? cfr(r.deaths, r.cases).toFixed(2) : "",
+          r.cases != null && r.deaths != null ? cfr(r.deaths, r.cases)!.toFixed(2) : "",
           r.strain ?? "",
           r.lastReport,
           r.status ?? "",

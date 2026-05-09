@@ -1,49 +1,47 @@
+import dynamic from "next/dynamic";
 import Link from "next/link";
-import { Radio, ExternalLink } from "lucide-react";
+import { Radio, ExternalLink, AlertCircle } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { BigCounter } from "@/components/cards/big-counter";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { StrainDonut } from "@/components/charts/strain-donut";
-import { EventFrequencyChart } from "@/components/charts/event-frequency";
-import { WorldMap } from "@/components/maps/world-map";
+import { StrainDisplay } from "@/components/charts/strain-display";
+import { SourceBreakdownTable } from "@/components/source-breakdown-table";
+import { RelativeTime } from "@/components/relative-time";
 import { AlertFeed } from "@/components/alert-feed";
 import { dataSources } from "@/lib/data";
 import { fetchLive } from "@/lib/sources";
 import {
   outbreakRows,
-  regionTotals,
   snapshotDate,
   strainAggregates,
 } from "@/lib/metrics";
 import { fmt, fmtCfr, fmtDate } from "@/lib/format";
 
+// Heavy charts code-split — they're "use client" internally so this just defers their JS
+const UsWeeklyChart = dynamic(() => import("@/components/charts/us-weekly-chart").then((m) => m.UsWeeklyChart), {
+  loading: () => <div className="h-[260px] flex items-center justify-center text-sm text-[var(--color-fg-muted)]">Loading chart…</div>,
+});
+const WorldMap = dynamic(() => import("@/components/maps/world-map").then((m) => m.WorldMap), {
+  loading: () => <div className="h-[480px] flex items-center justify-center text-sm text-[var(--color-fg-muted)]">Loading world map…</div>,
+});
+
 export const revalidate = 21600;
 
 export default async function DashboardPage() {
   const live = await fetchLive();
-  const { countries, events, sources, totals } = live;
+  const { countries, events, sources, totals, breakdownRows, usWeekly } = live;
 
   const ob = outbreakRows(countries);
-  const strains = strainAggregates(countries).filter((s) => s.cases > 0);
-  const regions = regionTotals(countries);
-
-  // event frequency by year (live)
-  const yearCounts = new Map<string, number>();
-  for (const e of events) {
-    const y = e.date.slice(0, 4);
-    yearCounts.set(y, (yearCounts.get(y) ?? 0) + 1);
-  }
-  const eventFreq = Array.from(yearCounts.entries())
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([period, count]) => ({ period, count }));
-
-  // CFR for the most recent WHO event
+  const strains = strainAggregates(countries);
   const latestEvent = events[0];
-  const cfr = latestEvent?.breakdown
-    ? (latestEvent.breakdown.deceased && latestEvent.breakdown.reported
-        ? (latestEvent.breakdown.deceased / latestEvent.breakdown.reported) * 100
-        : null)
+
+  // Highest CFR — derived from the most recent WHO event when country-level CFR isn't computable.
+  const eventCfr = latestEvent?.breakdown
+    && latestEvent.breakdown.deceased != null
+    && latestEvent.breakdown.reported != null
+    && latestEvent.breakdown.reported > 0
+    ? (latestEvent.breakdown.deceased / latestEvent.breakdown.reported) * 100
     : null;
 
   return (
@@ -52,10 +50,11 @@ export default async function DashboardPage() {
         title="Global Surveillance"
         subtitle="Live hantavirus tracking · WHO Disease Outbreak News · CDC NNDSS · Wikipedia reference"
         snapshotDate={snapshotDate(countries)}
+        relativeFetch={live.fetchedAt}
       />
 
-      {/* JHU CSSE-style big counter grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 mb-8">
+      {/* JHU CSSE-style hero */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-6">
         <BigCounter
           label="Reported"
           value={totals.reported != null ? fmt(totals.reported) : "—"}
@@ -83,7 +82,7 @@ export default async function DashboardPage() {
         <BigCounter
           label="Deceased"
           value={totals.deceased != null ? fmt(totals.deceased) : "—"}
-          sub={cfr != null ? `CFR ${fmtCfr(cfr)} (current event)` : "—"}
+          sub={eventCfr != null ? `CFR ${fmtCfr(eventCfr)} (current event)` : "—"}
           accent="purple"
         />
         <BigCounter
@@ -94,6 +93,22 @@ export default async function DashboardPage() {
         />
       </div>
 
+      {/* Source provenance — fix accuracy bug 1: where does each number come from */}
+      <section className="mb-8">
+        <div className="flex items-end justify-between mb-3 gap-3 flex-wrap">
+          <div>
+            <h2 className="text-lg font-bold tracking-tight">Where these numbers come from</h2>
+            <p className="text-sm text-[var(--color-fg-muted)]">
+              Per-source contributions. We do not invent or impute counts.
+            </p>
+          </div>
+          <Link href="/sources" className="text-sm font-medium text-blue-400 hover:text-blue-300">
+            All sources →
+          </Link>
+        </div>
+        <SourceBreakdownTable rows={breakdownRows} totals={totals} />
+      </section>
+
       {/* Coverage strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8 text-sm">
         <CoverageStat label="Countries flagged" value={countries.length} />
@@ -101,6 +116,27 @@ export default async function DashboardPage() {
         <CoverageStat label="Outbreak status" value={ob.length} />
         <CoverageStat label="Live sources" value={`${sources.filter((s) => s.ok).length} / ${sources.length}`} />
       </div>
+
+      {/* Active outbreak callout */}
+      {latestEvent && (
+        <Card className="mb-8 border-l-[3px] border-l-red-500">
+          <div className="flex items-start gap-3 mb-3">
+            <AlertCircle className="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <h3 className="text-base font-bold">{latestEvent.title}</h3>
+                <Badge variant="outbreak">{latestEvent.severity}</Badge>
+              </div>
+              <p className="text-sm text-[var(--color-fg-secondary)] leading-relaxed">{latestEvent.body}</p>
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--color-fg-muted)]">
+                <span>Source: <a href={latestEvent.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">{latestEvent.source}</a></span>
+                <span>Published {fmtDate(latestEvent.date)}</span>
+                <Link href={`/outbreaks/${latestEvent.id}`} className="text-blue-400 hover:text-blue-300 font-medium">Full event →</Link>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
 
       <Card className="mb-8">
         <CardHeader>
@@ -117,17 +153,25 @@ export default async function DashboardPage() {
       </Card>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-8">
+        {/* Replaced EventFrequencyChart with the actually-useful NNDSS US weekly chart */}
         <Card className="xl:col-span-2">
           <CardHeader>
             <div>
-              <CardTitle>WHO Disease Outbreak News — by year</CardTitle>
-              <CardSubtitle>Hantavirus DON publication frequency</CardSubtitle>
+              <CardTitle>US weekly trend (NNDSS)</CardTitle>
+              <CardSubtitle>
+                {usWeekly.ok
+                  ? `Last ${usWeekly.weeklyHistory.length} reporting weeks · YTD ${usWeekly.reportingYear} through week ${usWeekly.reportingWeek}`
+                  : "Awaiting CDC NNDSS data"}
+              </CardSubtitle>
             </div>
+            <a href={usWeekly.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-[var(--color-fg-muted)] hover:text-blue-400">
+              CDC source <ExternalLink className="inline h-3 w-3" />
+            </a>
           </CardHeader>
-          {eventFreq.length > 0 ? (
-            <EventFrequencyChart data={eventFreq} />
+          {usWeekly.ok && usWeekly.weeklyHistory.length > 0 ? (
+            <UsWeeklyChart data={usWeekly.weeklyHistory} />
           ) : (
-            <div className="text-sm text-[var(--color-fg-muted)] py-12 text-center">No DON entries returned.</div>
+            <div className="h-[260px] flex items-center justify-center text-sm text-[var(--color-fg-muted)]">No NNDSS data this period.</div>
           )}
         </Card>
         <Card>
@@ -137,13 +181,7 @@ export default async function DashboardPage() {
               <CardSubtitle>Live reporting set</CardSubtitle>
             </div>
           </CardHeader>
-          {strains.length > 0 ? (
-            <StrainDonut data={strains} />
-          ) : (
-            <div className="text-sm text-[var(--color-fg-muted)] py-12 text-center px-4">
-              Awaiting per-strain case counts from live sources.
-            </div>
-          )}
+          <StrainDisplay data={strains} />
         </Card>
       </div>
 
@@ -208,7 +246,7 @@ export default async function DashboardPage() {
                   <Radio className="h-4 w-4 text-emerald-400" /> WHO Disease Outbreak News
                 </h2>
                 <p className="text-sm text-[var(--color-fg-muted)]">
-                  Live · last fetch {fmtDate(live.fetchedAt.slice(0, 10))} · {events.length} entr{events.length === 1 ? "y" : "ies"}
+                  Live · <RelativeTime iso={live.fetchedAt} prefix="updated" /> · {events.length} entr{events.length === 1 ? "y" : "ies"}
                 </p>
               </div>
               <Badge variant="success" pulse>live</Badge>

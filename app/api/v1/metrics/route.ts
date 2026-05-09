@@ -16,7 +16,7 @@ export async function GET() {
     totals: {
       cases: totalCases(countries),
       deaths: totalDeaths(countries),
-      cfr_pct: +overallCfr(countries).toFixed(2),
+      cfr_pct: overallCfr(countries) != null ? +overallCfr(countries)!.toFixed(2) : null,
       countries_with_data: countries.length,
       who_events: events.length,
       flagged_countries: outbreakRows(countries).length,

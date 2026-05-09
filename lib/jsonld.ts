@@ -36,7 +36,7 @@ export function countrySchema(r: CountrySnapshot) {
   if (r.cases != null) props.push({ "@type": "PropertyValue", name: "cases", value: r.cases });
   if (r.deaths != null) props.push({ "@type": "PropertyValue", name: "deaths", value: r.deaths });
   if (r.cases != null && r.deaths != null)
-    props.push({ "@type": "PropertyValue", name: "case_fatality_rate", value: +cfr(r.deaths, r.cases).toFixed(2), unitText: "percent" });
+    props.push({ "@type": "PropertyValue", name: "case_fatality_rate", value: +cfr(r.deaths, r.cases)!.toFixed(2), unitText: "percent" });
   if (r.strain) props.push({ "@type": "PropertyValue", name: "predominant_strain", value: r.strain });
   if (r.status) props.push({ "@type": "PropertyValue", name: "status", value: r.status });
   props.push({ "@type": "PropertyValue", name: "last_report", value: r.lastReport });

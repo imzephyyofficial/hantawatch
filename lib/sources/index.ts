@@ -16,6 +16,7 @@
  * Cached for 6h via Next fetch revalidation.
  */
 
+import { cache } from "react";
 import { fetchWhoEvents, type WhoEvent } from "./who";
 import { fetchCdcUs, type CdcSnapshot } from "./cdc";
 import { fetchNndss, type NndssSnapshot } from "./nndss";
@@ -27,6 +28,14 @@ const EMPTY_BREAKDOWN: CaseBreakdown = {
 };
 
 export type { CaseBreakdown };
+
+/** Per-source contribution to a row of the breakdown table. */
+export interface BreakdownRow {
+  source: string;
+  scope: string;       // e.g. "WHO DON600 (multi-country, May 2026)" or "CDC NNDSS · US YTD 2026"
+  url?: string;
+  breakdown: CaseBreakdown;
+}
 
 export interface CountrySnapshot {
   iso: string;
@@ -61,6 +70,8 @@ export interface LiveData {
   fetchedAt: string;
   /** Aggregated case breakdown across all live sources (additive). */
   totals: CaseBreakdown;
+  /** Per-source rows so the UI can show provenance instead of just one number. */
+  breakdownRows: BreakdownRow[];
 }
 
 /**
@@ -120,7 +131,7 @@ const COUNTRY_REF: Record<
   "Cabo Verde": { iso: "cv", flag: "🇨🇻", region: "Africa", population: 600_000 },
 };
 
-export async function fetchLive(): Promise<LiveData> {
+export const fetchLive = cache(async function fetchLive(): Promise<LiveData> {
   const fetchedAt = new Date().toISOString();
   const [whoResult, cdcResult, nndssResult] = await Promise.all([
     fetchWhoEvents(),
@@ -130,13 +141,15 @@ export async function fetchLive(): Promise<LiveData> {
 
   const countries = composeCountrySnapshots(whoResult.events, cdcResult, nndssResult);
   const events = whoResult.events.map(toOutbreakEvent);
-  const totals = aggregateTotals(whoResult.events, nndssResult, cdcResult);
+  const breakdownRows = composeBreakdownRows(whoResult.events, nndssResult);
+  const totals = sumBreakdowns(breakdownRows.map((r) => r.breakdown));
 
   return {
     countries,
     events,
     usWeekly: nndssResult,
     totals,
+    breakdownRows,
     fetchedAt,
     sources: [
       {
@@ -168,32 +181,48 @@ export async function fetchLive(): Promise<LiveData> {
       },
     ],
   };
+});
+
+function composeBreakdownRows(events: WhoEvent[], nndss: NndssSnapshot): BreakdownRow[] {
+  const rows: BreakdownRow[] = [];
+
+  // Most-recent WHO event represents the active outbreak. Earlier WHO events
+  // (e.g. DON599 → DON600) are usually superseded by the latest, so adding
+  // them would double-count.
+  if (events.length > 0) {
+    const e = events[0];
+    rows.push({
+      source: `WHO ${e.id}`,
+      scope: `${e.countries.length > 1 ? "Multi-country" : (e.countries[0] ?? "Multi-country")} · ${e.publicationDate.slice(0, 10)}`,
+      url: e.url,
+      breakdown: e.breakdown,
+    });
+  }
+
+  // CDC NNDSS — US weekly nationally notifiable surveillance, YTD.
+  if (nndss.ok && nndss.ytdCombined != null) {
+    rows.push({
+      source: "CDC NNDSS",
+      scope: `United States · YTD ${nndss.reportingYear}, week ${nndss.reportingWeek}`,
+      url: nndss.sourceUrl,
+      breakdown: {
+        ...EMPTY_BREAKDOWN,
+        reported: nndss.ytdCombined,
+        confirmed: nndss.ytdCombined, // NNDSS only counts confirmed reportable cases
+      },
+    });
+  }
+
+  return rows;
 }
 
-function aggregateTotals(
-  events: WhoEvent[],
-  nndss: NndssSnapshot,
-  cdc: CdcSnapshot
-): CaseBreakdown {
+function sumBreakdowns(items: CaseBreakdown[]): CaseBreakdown {
   const totals: CaseBreakdown = { ...EMPTY_BREAKDOWN };
-
-  // Pull the most recent WHO event's breakdown — represents the active outbreak
-  if (events.length > 0) {
-    const b = events[0].breakdown;
+  for (const b of items) {
     for (const k of Object.keys(totals) as Array<keyof CaseBreakdown>) {
       if (b[k] != null) totals[k] = (totals[k] ?? 0) + b[k]!;
     }
   }
-
-  // Add NNDSS YTD US numbers as additional reported cases
-  if (nndss.ok && nndss.ytdCombined != null) {
-    totals.reported = (totals.reported ?? 0) + nndss.ytdCombined;
-    totals.confirmed = (totals.confirmed ?? 0) + nndss.ytdCombined;
-  }
-
-  // CDC cumulative is historical context, not added to current totals
-  void cdc;
-
   return totals;
 }
 

@@ -1,9 +1,17 @@
 import type { Metadata } from "next";
+import dynamic from "next/dynamic";
 import { Topbar } from "@/components/layout/topbar";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card";
-import { CfrStrainBar } from "@/components/charts/cfr-strain-bar";
-import { RegionBar } from "@/components/charts/region-bar";
-import { TopCountriesBar } from "@/components/charts/top-countries-bar";
+
+const CfrStrainBar = dynamic(() => import("@/components/charts/cfr-strain-bar").then((m) => m.CfrStrainBar), {
+  loading: () => <div className="h-[300px] flex items-center justify-center text-sm text-[var(--color-fg-muted)]">Loading chart…</div>,
+});
+const RegionBar = dynamic(() => import("@/components/charts/region-bar").then((m) => m.RegionBar), {
+  loading: () => <div className="h-[300px] flex items-center justify-center text-sm text-[var(--color-fg-muted)]">Loading chart…</div>,
+});
+const TopCountriesBar = dynamic(() => import("@/components/charts/top-countries-bar").then((m) => m.TopCountriesBar), {
+  loading: () => <div className="h-[420px] flex items-center justify-center text-sm text-[var(--color-fg-muted)]">Loading chart…</div>,
+});
 import { fetchLive } from "@/lib/sources";
 import { regionCfr, regionTotals, snapshotDate, strainAggregates, topCountries, totalCases } from "@/lib/metrics";
 import { fmtCfr } from "@/lib/format";
@@ -29,6 +37,9 @@ export default async function Page() {
   const deadliest = strainsAgg.length > 0 ? [...strainsAgg].sort((a, b) => b.cfr - a.cfr)[0] : null;
 
   const haveAnyCases = totalCasesNum > 0;
+  const americasVsEurope = americasCfr != null && europeCfr != null && europeCfr > 0
+    ? (americasCfr / europeCfr).toFixed(1)
+    : null;
 
   return (
     <>
@@ -43,9 +54,11 @@ export default async function Page() {
           <Insight
             icon={<AlertCircle className="h-5 w-5 text-amber-400" />}
             title={
-              europeCfr > 0
-                ? `Americas CFR is ${(americasCfr / Math.max(europeCfr, 0.01)).toFixed(1)}× higher than Europe`
-                : `Americas average CFR is ${fmtCfr(americasCfr)}`
+              americasVsEurope
+                ? `Americas CFR is ${americasVsEurope}× higher than Europe`
+                : americasCfr != null
+                  ? `Americas average CFR is ${fmtCfr(americasCfr)}`
+                  : "CFR not computable for either region"
             }
             body={`Americas average ${fmtCfr(americasCfr)} vs. Europe ${fmtCfr(europeCfr)} — derived from countries currently in the live set.`}
           />
