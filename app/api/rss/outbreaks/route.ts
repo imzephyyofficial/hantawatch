@@ -1,4 +1,5 @@
 import { outbreakEvents } from "@/lib/data";
+import { fetchWhoLive } from "@/lib/live";
 
 export const revalidate = 3600;
 
@@ -14,13 +15,21 @@ function escapeXml(s: string) {
 }
 
 export async function GET() {
-  const items = outbreakEvents
+  const live = await fetchWhoLive();
+  const merged = [
+    ...live.events.map((e) => ({ ...e, _live: true as const })),
+    ...outbreakEvents.map((e) => ({ ...e, _live: false as const })),
+  ].sort((a, b) => (a.date > b.date ? -1 : 1));
+
+  const items = merged
     .map((e) => {
-      const url = `${BASE}/outbreaks/${e.id}`;
+      const isExternal = e._live;
+      const url = isExternal ? (e.sourceUrl ?? `${BASE}/outbreaks`) : `${BASE}/outbreaks/${e.id}`;
+      const labelPrefix = isExternal ? "[WHO] " : "";
       return `
     <entry>
       <id>${url}</id>
-      <title>${escapeXml(`${e.flag} ${e.title}`)}</title>
+      <title>${escapeXml(`${e.flag} ${labelPrefix}${e.title}`)}</title>
       <link href="${url}" />
       <updated>${new Date(e.date + "T00:00:00Z").toISOString()}</updated>
       <category term="${escapeXml(e.severity)}" />

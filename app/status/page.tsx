@@ -5,13 +5,17 @@ import { Badge } from "@/components/ui/badge";
 import { snapshotDate } from "@/lib/metrics";
 import { surveillanceData, dataSources } from "@/lib/data";
 import { fmt, fmtDate } from "@/lib/format";
+import { fetchWhoLive } from "@/lib/live";
+
+export const revalidate = 21600;
 
 export const metadata: Metadata = {
   title: "Status",
   description: "Data freshness and operational state of the HantaWatch dashboard.",
 };
 
-export default function Page() {
+export default async function Page() {
+  const live = await fetchWhoLive();
   const snapshot = snapshotDate();
   const lastReports = surveillanceData
     .map((r) => r.lastReport)
@@ -45,12 +49,25 @@ export default function Page() {
       <Card className="mb-6">
         <h3 className="font-semibold mb-4">Components</h3>
         <ul className="space-y-3">
-          <Row label="Dashboard rendering" status="ok" detail="Static + ISR" />
-          <Row label="Data layer (snapshot)" status="ok" detail="Bundled fixtures · no live ETL yet" />
-          <Row label="Data ingestion (cron)" status="planned" detail="Phase 2 · cron to WHO/CDC/ECDC/PAHO" />
-          <Row label="Database" status="planned" detail="Phase 2 · Neon Postgres" />
+          <Row label="Dashboard rendering" status="ok" detail="Static + ISR (6h revalidate)" />
+          <Row label="Country surveillance fixtures" status="ok" detail="Curated baseline · refreshed manually until Phase 2 DB" />
+          <Row
+            label="WHO Disease Outbreak News (live)"
+            status={live.ok ? "ok" : "warn"}
+            detail={
+              live.ok
+                ? `${live.events.length} entr${live.events.length === 1 ? "y" : "ies"} · last fetch ${new Date(live.fetchedAt).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })}`
+                : "Last fetch failed · falling back to curated context"
+            }
+          />
+          <Row label="Daily cron (/api/cron/refresh)" status="ok" detail="Runs 06:00 UTC · revalidates dashboard, outbreaks, /api/v1/live" />
+          <Row label="CDC adapter" status="planned" detail="Phase 2 · scrape annual surveillance table" />
+          <Row label="ECDC adapter" status="planned" detail="Phase 2 · annual epi report (PDF or HTML)" />
+          <Row label="PAHO adapter" status="planned" detail="Phase 2 · regional reports + Epi Alerts" />
+          <Row label="Database (Neon Postgres)" status="planned" detail="Phase 2 · provision in Vercel Marketplace" />
           <Row label="Auth & subscriptions" status="planned" detail="Phase 5 · Clerk + Resend" />
-          <Row label="Public API" status="planned" detail="Phase 8 · /api/v1/*" />
+          <Row label="Public API v1" status="ok" detail="/api/v1/{countries,outbreaks,strains,metrics,live}" />
+          <Row label="Atom feed" status="ok" detail="/api/rss/outbreaks (curated + WHO live)" />
         </ul>
       </Card>
 

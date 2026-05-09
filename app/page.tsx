@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { Globe2, Siren, Skull, TrendingUp, ArrowRight } from "lucide-react";
+import { Globe2, Siren, Skull, TrendingUp, ArrowRight, Radio, ExternalLink } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { StatCard } from "@/components/cards/stat-card";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TimelineChart } from "@/components/charts/timeline-chart";
 import { StrainDonut } from "@/components/charts/strain-donut";
@@ -18,9 +19,13 @@ import {
   totalCases,
   totalDeaths,
 } from "@/lib/metrics";
-import { fmt, fmtCfr } from "@/lib/format";
+import { fmt, fmtCfr, fmtDate } from "@/lib/format";
+import { fetchWhoLive } from "@/lib/live";
 
-export default function DashboardPage() {
+export const revalidate = 21600; // align cache with WHO fetch
+
+export default async function DashboardPage() {
+  const live = await fetchWhoLive();
   const cases = totalCases();
   const deaths = totalDeaths();
   const cfrPct = overallCfr();
@@ -113,11 +118,39 @@ export default function DashboardPage() {
         </div>
       </section>
 
+      {live.events.length > 0 && (
+        <section className="mb-8">
+          <div className="flex items-end justify-between mb-4 gap-4 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div>
+                <h2 className="text-lg font-bold tracking-tight flex items-center gap-2">
+                  <Radio className="h-4 w-4 text-emerald-400" /> Live from WHO
+                </h2>
+                <p className="text-sm text-[var(--color-fg-muted)]">
+                  Disease Outbreak News entries fetched live · last refresh {fmtDate(live.fetchedAt.slice(0, 10))}
+                </p>
+              </div>
+              <Badge variant="success" pulse>live</Badge>
+            </div>
+            <a
+              href="https://www.who.int/emergencies/disease-outbreak-news"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Button>
+                WHO source <ExternalLink className="h-3 w-3" />
+              </Button>
+            </a>
+          </div>
+          <AlertFeed events={live.events.slice(0, 5)} linkable={false} />
+        </section>
+      )}
+
       <section className="mb-8">
         <div className="flex items-end justify-between mb-4 gap-4 flex-wrap">
           <div>
-            <h2 className="text-lg font-bold tracking-tight">Recent alerts</h2>
-            <p className="text-sm text-[var(--color-fg-muted)]">Most recent surveillance signals</p>
+            <h2 className="text-lg font-bold tracking-tight">Curated context</h2>
+            <p className="text-sm text-[var(--color-fg-muted)]">Editorial summaries with regional context</p>
           </div>
           <Link href="/outbreaks">
             <Button>

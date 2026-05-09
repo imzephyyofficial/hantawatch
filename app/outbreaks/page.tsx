@@ -4,10 +4,14 @@ import { Topbar } from "@/components/layout/topbar";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { AlertFeed } from "@/components/alert-feed";
+import { Radio, ExternalLink } from "lucide-react";
 import { outbreaks } from "@/lib/metrics";
-import { outbreakEvents, surveillanceData } from "@/lib/data";
+import { outbreakEvents } from "@/lib/data";
 import { cfr, fmt, fmtCfr, fmtDate } from "@/lib/format";
+import { fetchWhoLive } from "@/lib/live";
 import type { Status } from "@/lib/types";
+
+export const revalidate = 21600;
 
 export const metadata: Metadata = {
   title: "Active Outbreaks",
@@ -20,12 +24,32 @@ const STATUS_BADGE: Record<Status, BadgeVariant> = {
   monitored: "monitored",
 };
 
-export default function Page() {
+export default async function Page() {
   const active = outbreaks();
+  const live = await fetchWhoLive();
 
   return (
     <>
       <Topbar title="Active Outbreaks" subtitle="Countries currently classified outbreak and recent events" />
+
+      {live.events.length > 0 && (
+        <section className="mb-8">
+          <div className="flex items-end justify-between mb-4 gap-3 flex-wrap">
+            <div>
+              <h2 className="text-lg font-bold tracking-tight flex items-center gap-2">
+                <Radio className="h-4 w-4 text-emerald-400" /> WHO Disease Outbreak News
+              </h2>
+              <p className="text-sm text-[var(--color-fg-muted)]">
+                {live.events.length} live entr{live.events.length === 1 ? "y" : "ies"} · refreshed {fmtDate(live.fetchedAt.slice(0, 10))}
+              </p>
+            </div>
+            <a href="https://www.who.int/emergencies/disease-outbreak-news" target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-400 hover:text-blue-300">
+              View at WHO <ExternalLink className="inline h-3 w-3" />
+            </a>
+          </div>
+          <AlertFeed events={live.events} linkable={false} />
+        </section>
+      )}
 
       <section className="mb-8">
         <div className="flex items-end justify-between mb-4">

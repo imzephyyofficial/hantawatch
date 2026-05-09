@@ -12,10 +12,11 @@
  */
 
 import { NextResponse } from "next/server";
-import { fetchWho } from "@/lib/etl/who";
+import { revalidatePath } from "next/cache";
 import { fetchCdc } from "@/lib/etl/cdc";
 import { fetchEcdc } from "@/lib/etl/ecdc";
 import { fetchPaho } from "@/lib/etl/paho";
+import { fetchWhoLive } from "@/lib/live";
 import { isDbReady } from "@/lib/db/client";
 
 export const maxDuration = 60;
@@ -32,25 +33,39 @@ export async function GET(req: Request) {
 
   const started = new Date().toISOString();
 
-  const results = await Promise.allSettled([
-    fetchWho(),
+  const [who, cdc, ecdc, paho] = await Promise.allSettled([
+    fetchWhoLive(),
     fetchCdc(),
     fetchEcdc(),
     fetchPaho(),
   ]);
 
-  const summary = results.map((r, i) => ({
-    source: ["who", "cdc", "ecdc", "paho"][i],
-    status: r.status,
-    records: r.status === "fulfilled" ? r.value.records.length : 0,
-    events: r.status === "fulfilled" ? r.value.events.length : 0,
-    error: r.status === "rejected" ? String(r.reason) : null,
-  }));
+  const summary = [
+    { source: "who",  status: who.status,  ok: who.status === "fulfilled" && who.value.ok,
+      records: 0, events: who.status === "fulfilled" ? who.value.events.length : 0,
+      fetched_at: who.status === "fulfilled" ? who.value.fetchedAt : null,
+      error: who.status === "rejected" ? String(who.reason) : (who.status === "fulfilled" && !who.value.ok ? "fetch failed" : null) },
+    { source: "cdc",  status: cdc.status,  ok: cdc.status === "fulfilled",
+      records: cdc.status === "fulfilled" ? cdc.value.records.length : 0,
+      events: cdc.status === "fulfilled" ? cdc.value.events.length : 0,
+      fetched_at: cdc.status === "fulfilled" ? cdc.value.fetchedAt : null,
+      error: cdc.status === "rejected" ? String(cdc.reason) : null },
+    { source: "ecdc", status: ecdc.status, ok: ecdc.status === "fulfilled",
+      records: ecdc.status === "fulfilled" ? ecdc.value.records.length : 0,
+      events: ecdc.status === "fulfilled" ? ecdc.value.events.length : 0,
+      fetched_at: ecdc.status === "fulfilled" ? ecdc.value.fetchedAt : null,
+      error: ecdc.status === "rejected" ? String(ecdc.reason) : null },
+    { source: "paho", status: paho.status, ok: paho.status === "fulfilled",
+      records: paho.status === "fulfilled" ? paho.value.records.length : 0,
+      events: paho.status === "fulfilled" ? paho.value.events.length : 0,
+      fetched_at: paho.status === "fulfilled" ? paho.value.fetchedAt : null,
+      error: paho.status === "rejected" ? String(paho.reason) : null },
+  ];
 
-  // TODO Phase 2: when isDbReady, upsert + revalidateTag("dashboard")
-  // import { revalidateTag } from "next/cache";
-  // await db.transaction(async (tx) => { ... });
-  // revalidateTag("dashboard");
+  // Bust the dashboard cache so the next request re-fetches WHO via revalidate.
+  revalidatePath("/");
+  revalidatePath("/outbreaks");
+  revalidatePath("/api/v1/live");
 
   return NextResponse.json({
     ok: true,
@@ -59,7 +74,7 @@ export async function GET(req: Request) {
     finished: new Date().toISOString(),
     summary,
     note: isDbReady
-      ? "DB connected — adapters still stubbed; implement parsing in lib/etl/*"
-      : "Phase 2 not active. Provision Neon, then implement adapters.",
+      ? "DB connected — adapters parsing wired for WHO; CDC/ECDC/PAHO stubbed pending Phase 2."
+      : "Live WHO fetch active. CDC/ECDC/PAHO require Phase 2 (Neon).",
   });
 }
