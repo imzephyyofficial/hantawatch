@@ -53,6 +53,24 @@ const ACTIVE: ActiveMeta[] = [
     type: "JSON · SODA",
     category: "Surveillance",
   },
+  {
+    name: "CDC MMWR",
+    url: "https://www.cdc.gov/mmwr/index.html",
+    api: "https://www.cdc.gov/mmwr/rss/mmwr.xml",
+    contributes: "Morbidity and Mortality Weekly Report items, filtered for hantavirus titles. Display: title + source + link only.",
+    region: "United States",
+    type: "RSS",
+    category: "Surveillance",
+  },
+  {
+    name: "PAHO",
+    url: "https://www.paho.org/en/topics/hantavirus",
+    api: "https://www.paho.org/en/rss.xml",
+    contributes: "PAHO/WHO Americas regional news, filtered for hantavirus titles.",
+    region: "Americas",
+    type: "RSS",
+    category: "Surveillance",
+  },
   // Research signals
   {
     name: "EuropePMC",

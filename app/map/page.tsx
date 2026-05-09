@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 export const revalidate = 21600;
 
 export default async function MapPage() {
-  const [{ countries, events, usWeekly, fetchedAt }, research] = await Promise.all([
+  const [{ countries, events, usWeekly, agencyArticles, fetchedAt }, research] = await Promise.all([
     fetchLive(),
     fetchResearch(),
   ]);
@@ -24,7 +24,7 @@ export default async function MapPage() {
   const publications = research.publications.recentPapers;
   const preprints = research.preprints.recent;
 
-  const totalSignals = events.length + publications.length + preprints.length;
+  const totalSignals = events.length + agencyArticles.length + publications.length + preprints.length;
   const flaggedCountries = countries.filter((c) => c.status === "outbreak").length;
   const lead = events[0];
 
@@ -72,6 +72,7 @@ export default async function MapPage() {
         stateRows={stateRows}
         publications={publications}
         preprints={preprints}
+        agencyArticles={agencyArticles}
         fetchedAt={fetchedAt}
       />
     </div>

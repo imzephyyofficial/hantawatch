@@ -20,6 +20,7 @@ import { cache } from "react";
 import { fetchWhoEvents, type WhoEvent } from "./who";
 import { fetchCdcUs, type CdcSnapshot } from "./cdc";
 import { fetchNndss, type NndssSnapshot } from "./nndss";
+import { fetchCdcMmwr, fetchPahoRss, type AgencyArticle, type AgencyFeedResult } from "./agency-rss";
 import type { CaseBreakdown, OutbreakEvent, Region, Status } from "../types";
 
 const EMPTY_BREAKDOWN: CaseBreakdown = {
@@ -72,6 +73,8 @@ export interface LiveData {
   totals: CaseBreakdown;
   /** Per-source rows so the UI can show provenance instead of just one number. */
   breakdownRows: BreakdownRow[];
+  /** Agency news articles (CDC MMWR + PAHO) filtered for hantavirus */
+  agencyArticles: AgencyArticle[];
 }
 
 /**
@@ -133,16 +136,21 @@ const COUNTRY_REF: Record<
 
 export const fetchLive = cache(async function fetchLive(): Promise<LiveData> {
   const fetchedAt = new Date().toISOString();
-  const [whoResult, cdcResult, nndssResult] = await Promise.all([
+  const [whoResult, cdcResult, nndssResult, mmwrResult, pahoResult] = await Promise.all([
     fetchWhoEvents(),
     fetchCdcUs(),
     fetchNndss(),
+    fetchCdcMmwr(),
+    fetchPahoRss(),
   ]);
 
   const countries = composeCountrySnapshots(whoResult.events, cdcResult, nndssResult);
   const events = whoResult.events.map(toOutbreakEvent);
   const breakdownRows = composeBreakdownRows(whoResult.events, nndssResult);
   const totals = sumBreakdowns(breakdownRows.map((r) => r.breakdown));
+  const agencyArticles = [...mmwrResult.items, ...pahoResult.items].sort((a, b) =>
+    a.date > b.date ? -1 : 1
+  );
 
   return {
     countries,
@@ -150,6 +158,7 @@ export const fetchLive = cache(async function fetchLive(): Promise<LiveData> {
     usWeekly: nndssResult,
     totals,
     breakdownRows,
+    agencyArticles,
     fetchedAt,
     sources: [
       {
@@ -179,9 +188,25 @@ export const fetchLive = cache(async function fetchLive(): Promise<LiveData> {
             ` · ${nndssResult.stateRows.length} states reporting`
           : "fetch failed",
       },
+      sourceFreshnessFromAgency(mmwrResult),
+      sourceFreshnessFromAgency(pahoResult),
     ],
   };
 });
+
+function sourceFreshnessFromAgency(r: AgencyFeedResult): SourceFreshness {
+  return {
+    source: r.source,
+    url: r.feedUrl,
+    ok: r.ok,
+    fetchedAt: r.fetchedAt,
+    detail: r.ok
+      ? r.items.length === 0
+        ? `0 hantavirus matches in ${r.totalScanned} feed items`
+        : `${r.items.length} hantavirus item${r.items.length === 1 ? "" : "s"} (of ${r.totalScanned} scanned)`
+      : "fetch failed",
+  };
+}
 
 function composeBreakdownRows(events: WhoEvent[], nndss: NndssSnapshot): BreakdownRow[] {
   const rows: BreakdownRow[] = [];

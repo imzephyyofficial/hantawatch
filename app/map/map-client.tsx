@@ -21,12 +21,16 @@ interface Props {
   stateRows: Array<{ state: string; cumulative: number }>;
   publications: Array<{ id: string; title: string; year: number; journal: string; url: string }>;
   preprints: Array<{ doi: string; title: string; date: string; server: string; url: string }>;
+  agencyArticles: Array<{ id: string; title: string; link: string; date: string; source: string }>;
   fetchedAt: string;
 }
 
-export function MapClient({ countries, events, stateRows, publications, preprints, fetchedAt }: Props) {
+export function MapClient({ countries, events, stateRows, publications, preprints, agencyArticles, fetchedAt }: Props) {
   const allMarkers = useMemo(() => buildMarkersFrom(countries, stateRows), [countries, stateRows]);
-  const feed = useMemo(() => buildFeed(events, publications, preprints), [events, publications, preprints]);
+  const feed = useMemo(
+    () => buildFeed(events, publications, preprints, agencyArticles),
+    [events, publications, preprints, agencyArticles]
+  );
   const [visible, setVisible] = useState<Set<MapMarker["tier"]>>(new Set(["active", "historical", "endemic"]));
 
   const counts = useMemo(() => ({

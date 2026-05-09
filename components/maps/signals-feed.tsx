@@ -7,7 +7,7 @@ import { fmtRelative, fmtDate } from "@/lib/format";
 
 export interface FeedItem {
   id: string;
-  kind: "outbreak" | "publication" | "preprint";
+  kind: "outbreak" | "publication" | "preprint" | "news";
   title: string;
   body?: string;
   source: string;
@@ -24,7 +24,7 @@ interface Props {
 
 export function SignalsFeed({ items, fetchedAt }: Props) {
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<"all" | "outbreak" | "publication" | "preprint">("all");
+  const [tab, setTab] = useState<"all" | FeedItem["kind"]>("all");
 
   const filtered = useMemo(() => {
     let r = items;
@@ -57,8 +57,8 @@ export function SignalsFeed({ items, fetchedAt }: Props) {
             className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-[var(--color-bg-input)] border border-[var(--color-border)] text-xs focus:outline-none focus:border-blue-500"
           />
         </div>
-        <div className="flex gap-1 mt-2.5 text-[10px] uppercase tracking-wider font-bold">
-          {(["all", "outbreak", "publication", "preprint"] as const).map((t) => (
+        <div className="flex gap-1 mt-2.5 text-[10px] uppercase tracking-wider font-bold flex-wrap">
+          {(["all", "outbreak", "news", "publication", "preprint"] as const).map((t) => (
             <button
               key={t}
               type="button"
@@ -107,6 +107,8 @@ function SignalRow({ item }: { item: FeedItem }) {
   const kindStyles =
     item.kind === "outbreak"
       ? "bg-red-500/15 text-red-400 border-red-500/30"
+      : item.kind === "news"
+      ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
       : item.kind === "publication"
       ? "bg-blue-500/15 text-blue-400 border-blue-500/30"
       : "bg-purple-500/15 text-purple-300 border-purple-500/30";
@@ -147,7 +149,8 @@ function SignalRow({ item }: { item: FeedItem }) {
 export function buildFeed(
   events: OutbreakEvent[],
   pubs: Array<{ id: string; title: string; year: number; journal: string; url: string }>,
-  preprints: Array<{ doi: string; title: string; date: string; server: string; url: string }>
+  preprints: Array<{ doi: string; title: string; date: string; server: string; url: string }>,
+  agencyArticles: Array<{ id: string; title: string; link: string; date: string; source: string }> = []
 ): FeedItem[] {
   const out: FeedItem[] = [];
   for (const e of events) {
@@ -161,6 +164,16 @@ export function buildFeed(
       url: `/outbreaks/${e.id}`,
       flag: e.flag,
       country: e.country,
+    });
+  }
+  for (const a of agencyArticles) {
+    out.push({
+      id: a.id,
+      kind: "news",
+      title: a.title,
+      source: a.source,
+      date: a.date,
+      url: a.link,
     });
   }
   for (const p of pubs) {
