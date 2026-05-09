@@ -6,6 +6,7 @@ import { useState } from "react";
 import { SignInButton, UserButton, useAuth } from "@clerk/nextjs";
 import {
   BarChart3,
+  BookOpen,
   Database,
   FileText,
   GitCompare,
@@ -25,6 +26,7 @@ const NAV = [
   { href: "/risk", label: "Risk index", Icon: ShieldAlert, match: ["/risk"] },
   { href: "/compare", label: "Compare", Icon: GitCompare, match: ["/compare"] },
   { href: "/analytics", label: "Analytics", Icon: BarChart3, match: ["/analytics"] },
+  { href: "/research", label: "Research", Icon: BookOpen, match: ["/research"] },
   { href: "/sources", label: "Data sources", Icon: Database, match: ["/sources"] },
   { href: "/reports", label: "Reports", Icon: FileText, match: ["/reports"] },
 ];

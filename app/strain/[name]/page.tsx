@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { strains } from "@/lib/data";
 import { fetchLive } from "@/lib/sources";
 import { fetchWikiSummary, STRAIN_WIKI_SLUG } from "@/lib/sources/wikipedia";
+import { fetchReservoir } from "@/lib/sources/gbif";
 import { cfr, fmt, fmtCfr } from "@/lib/format";
 import { JsonLd } from "@/components/json-ld";
 import { strainSchema } from "@/lib/jsonld";
@@ -46,9 +47,10 @@ export default async function Page({ params }: { params: Promise<Params> }) {
   if (!s) notFound();
 
   const wikiSlug = STRAIN_WIKI_SLUG[s.name];
-  const [{ countries }, wiki] = await Promise.all([
+  const [{ countries }, wiki, reservoir] = await Promise.all([
     fetchLive(),
     wikiSlug ? fetchWikiSummary(wikiSlug) : Promise.resolve(null),
+    fetchReservoir(s.name),
   ]);
   const reportingCountries = countries.filter((r) =>
     (r.strain ?? "").toLowerCase().includes(s.name.toLowerCase())
@@ -92,6 +94,28 @@ export default async function Page({ params }: { params: Promise<Params> }) {
           />
         </dl>
       </Card>
+
+      {reservoir && reservoir.ok && (
+        <Card className="mb-8">
+          <CardHeader>
+            <div>
+              <CardTitle>Reservoir taxonomy</CardTitle>
+              <CardSubtitle>Live from GBIF · {reservoir.scientificName}</CardSubtitle>
+            </div>
+            <a href={reservoir.url} target="_blank" rel="noopener noreferrer" className="text-xs text-[var(--color-fg-muted)] hover:text-blue-400">
+              View on GBIF <ExternalLink className="inline h-3 w-3" />
+            </a>
+          </CardHeader>
+          <dl className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-sm">
+            <Field label="Kingdom" value={reservoir.kingdom ?? "—"} />
+            <Field label="Phylum" value={reservoir.phylum ?? "—"} />
+            <Field label="Order" value={reservoir.order ?? "—"} />
+            <Field label="Family" value={reservoir.family ?? "—"} />
+            <Field label="Genus" value={reservoir.genus ?? "—"} />
+            <Field label="Recorded" value={reservoir.occurrences != null ? `${fmt(reservoir.occurrences)} occurrences` : "—"} />
+          </dl>
+        </Card>
+      )}
 
       {wiki && wiki.ok && wiki.extract && (
         <Card className="mb-8">

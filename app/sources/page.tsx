@@ -3,6 +3,7 @@ import { Topbar } from "@/components/layout/topbar";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { fetchLive } from "@/lib/sources";
+import { fetchResearch } from "@/lib/sources/research";
 import { fmtDate } from "@/lib/format";
 import { ExternalLink } from "lucide-react";
 
@@ -13,7 +14,18 @@ export const metadata: Metadata = {
 
 export const revalidate = 21600;
 
-const ACTIVE = [
+interface ActiveMeta {
+  name: string;
+  url: string;
+  api: string;
+  contributes: string;
+  region: string;
+  type: string;
+  category: "Surveillance" | "Research" | "Reference";
+}
+
+const ACTIVE: ActiveMeta[] = [
+  // Surveillance signals
   {
     name: "WHO Disease Outbreak News",
     url: "https://www.who.int/emergencies/disease-outbreak-news",
@@ -21,6 +33,7 @@ const ACTIVE = [
     contributes: "Outbreak events, country involvement, total cases/deaths/CFR parsed from event Summary",
     region: "Global",
     type: "JSON · OData",
+    category: "Surveillance",
   },
   {
     name: "CDC Hantavirus — cumulative US cases",
@@ -29,6 +42,7 @@ const ACTIVE = [
     contributes: "All-time US cumulative since 1993",
     region: "United States",
     type: "HTML",
+    category: "Surveillance",
   },
   {
     name: "CDC NNDSS Weekly Tables",
@@ -37,7 +51,37 @@ const ACTIVE = [
     contributes: "US weekly counts for HPS + non-HPS infection · per-state breakdown · 12-week history",
     region: "United States",
     type: "JSON · SODA",
+    category: "Surveillance",
   },
+  // Research signals
+  {
+    name: "EuropePMC",
+    url: "https://europepmc.org/search?query=hantavirus",
+    api: "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+    contributes: "Total + recent peer-reviewed publications about hantavirus (12k+ papers indexed)",
+    region: "Global",
+    type: "JSON",
+    category: "Research",
+  },
+  {
+    name: "bioRxiv / medRxiv",
+    url: "https://www.biorxiv.org/search/hantavirus",
+    api: "https://api.biorxiv.org/details/biorxiv/{since}/{until}/{cursor}",
+    contributes: "Recent preprints (last 90 days) filtered for hantavirus mentions",
+    region: "Global",
+    type: "JSON",
+    category: "Research",
+  },
+  {
+    name: "Wikipedia pageviews (Wikimedia)",
+    url: "https://pageviews.wmcloud.org/?project=en.wikipedia.org&pages=Orthohantavirus",
+    api: "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/...",
+    contributes: "Daily page views of canonical hantavirus articles · 60-day window · proxy for public attention",
+    region: "Global",
+    type: "JSON",
+    category: "Research",
+  },
+  // Reference
   {
     name: "Wikipedia REST API",
     url: "https://en.wikipedia.org/wiki/Orthohantavirus",
@@ -45,6 +89,16 @@ const ACTIVE = [
     contributes: "Strain reference content, syndrome background",
     region: "Reference",
     type: "JSON",
+    category: "Reference",
+  },
+  {
+    name: "GBIF (Global Biodiversity Information Facility)",
+    url: "https://www.gbif.org/",
+    api: "https://api.gbif.org/v1/species/match · /v1/occurrence/search",
+    contributes: "Taxonomy of reservoir rodent species (kingdom, family, genus, occurrence count)",
+    region: "Reference",
+    type: "JSON",
+    category: "Reference",
   },
 ];
 
@@ -60,7 +114,33 @@ const PLANNED: Array<{ name: string; reason: string; url?: string }> = [
 ];
 
 export default async function Page() {
-  const { sources, fetchedAt } = await fetchLive();
+  const [{ sources, fetchedAt }, research] = await Promise.all([fetchLive(), fetchResearch()]);
+
+  // Stitch live freshness rows with research freshness rows so the UI shows them all
+  const allLiveSources = [
+    ...sources,
+    {
+      source: "EuropePMC",
+      url: "https://europepmc.org/search?query=hantavirus",
+      ok: research.publications.ok,
+      fetchedAt: research.publications.fetchedAt,
+      detail: research.publications.ok ? `${research.publications.totalHits.toLocaleString()} papers indexed` : "fetch failed",
+    },
+    {
+      source: "bioRxiv / medRxiv",
+      url: "https://www.biorxiv.org/search/hantavirus",
+      ok: research.preprints.ok,
+      fetchedAt: research.preprints.fetchedAt,
+      detail: research.preprints.ok ? `${research.preprints.count} hantavirus preprints in last 90 days` : "fetch failed",
+    },
+    {
+      source: "Wikipedia pageviews (Wikimedia)",
+      url: "https://pageviews.wmcloud.org/",
+      ok: research.pageviews.ok,
+      fetchedAt: research.pageviews.fetchedAt,
+      detail: research.pageviews.ok ? `${research.pageviews.totalLast30d.toLocaleString()} views in last 30 days` : "fetch failed",
+    },
+  ];
 
   return (
     <>
@@ -79,9 +159,9 @@ export default async function Page() {
         </p>
       </Card>
 
-      <h2 className="text-lg font-bold tracking-tight mb-4">Active sources ({sources.length})</h2>
+      <h2 className="text-lg font-bold tracking-tight mb-4">Active sources ({allLiveSources.length})</h2>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-10">
-        {sources.map((s) => {
+        {allLiveSources.map((s) => {
           const meta = ACTIVE.find((m) => m.name === s.source);
           return (
             <Card key={s.source}>
