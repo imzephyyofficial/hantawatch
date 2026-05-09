@@ -15,6 +15,7 @@ import {
   Menu,
   Search,
   ShieldAlert,
+  ShieldCheck,
   Siren,
   X,
 } from "lucide-react";
@@ -30,6 +31,7 @@ const NAV = [
   { href: "/analytics", label: "Analytics", Icon: BarChart3, match: ["/analytics"] },
   { href: "/research", label: "Research", Icon: BookOpen, match: ["/research"] },
   { href: "/sources", label: "Data sources", Icon: Database, match: ["/sources"] },
+  { href: "/methodology", label: "Methodology", Icon: ShieldCheck, match: ["/methodology"] },
   { href: "/reports", label: "Reports", Icon: FileText, match: ["/reports"] },
 ];
 

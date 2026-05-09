@@ -91,6 +91,12 @@ function mmwrWeekToIsoDate(year: number, week: number): string {
 /**
  * Country reference: name → iso, flag, region, population. This is geographic
  * fact, not surveillance data.
+ *
+ * Population figures: UN Department of Economic and Social Affairs, World
+ * Population Prospects (https://population.un.org/wpp/) — most recent
+ * snapshot, rounded to the nearest 100k. Used only for per-million
+ * computations and never as a surveillance metric. Surfaced on the
+ * /methodology page.
  */
 const COUNTRY_REF: Record<
   string,

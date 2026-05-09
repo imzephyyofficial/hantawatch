@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { Topbar } from "@/components/layout/topbar";
-import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { listApiKeys, listSubscriptions, upsertUser } from "@/lib/db/queries";
 import { isDbReady } from "@/lib/db/client";
-import { Bell, Key, FileText, ExternalLink } from "lucide-react";
+import { AccountClient } from "./account-client";
+import { AlertCircle } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Account",
@@ -12,86 +14,63 @@ export const metadata: Metadata = {
   robots: { index: false },
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function Page() {
   const { userId } = await auth();
+  if (!userId) redirect("/sign-in?redirect_url=/account");
   const user = await currentUser();
+  const email = user?.emailAddresses?.[0]?.emailAddress ?? "";
+
+  // Mirror to our DB so FK from subscriptions/api_keys works even if the
+  // Clerk webhook hasn't been configured yet.
+  if (isDbReady) {
+    await upsertUser({ id: userId, email });
+  }
+
+  const [subs, keys] = isDbReady
+    ? await Promise.all([listSubscriptions(userId), listApiKeys(userId)])
+    : [[], []];
 
   return (
     <>
       <Topbar
         title="Account"
-        subtitle={user ? `Signed in as ${user.emailAddresses[0]?.emailAddress ?? userId}` : "Account"}
-        freshness="account"
+        subtitle={email ? `Signed in as ${email}` : "Account"}
+        freshness="signed-in"
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-        <Card>
-          <CardHeader>
-            <div>
-              <CardTitle className="flex items-center gap-2"><Bell className="h-4 w-4 text-amber-400" /> Subscriptions</CardTitle>
-              <CardSubtitle>Email + webhook alerts on outbreak signals</CardSubtitle>
+      {!isDbReady && (
+        <Card className="mb-6 border-l-[3px] border-l-amber-500">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-[var(--color-fg-secondary)]">
+              Account features need <code className="text-xs px-1 py-0.5 rounded bg-[var(--color-bg-tertiary)]">DATABASE_URL</code>.
+              On Vercel-hosted deploys this is injected automatically by the Neon integration.
             </div>
-            <Badge>coming soon</Badge>
-          </CardHeader>
-          <p className="text-sm text-[var(--color-fg-muted)]">
-            Filter on region / strain / severity. Delivered via Resend (when wired) or webhook.
-            Cron diffs new events vs. last run and dispatches.
-          </p>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div>
-              <CardTitle className="flex items-center gap-2"><Key className="h-4 w-4 text-blue-400" /> API keys</CardTitle>
-              <CardSubtitle>Programmatic access to /api/v1/*</CardSubtitle>
-            </div>
-            <Badge>coming soon</Badge>
-          </CardHeader>
-          <p className="text-sm text-[var(--color-fg-muted)]">
-            Free tier: 1k requests/day. Pro tier: 100k/day with webhooks. Anonymous /api/v1/* keeps working at a soft limit.
-          </p>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div>
-              <CardTitle className="flex items-center gap-2"><FileText className="h-4 w-4 text-emerald-400" /> Annotations</CardTitle>
-              <CardSubtitle>Flag or correct surveillance data</CardSubtitle>
-            </div>
-            <Badge>coming soon</Badge>
-          </CardHeader>
-          <p className="text-sm text-[var(--color-fg-muted)]">
-            Auth&rsquo;d contributors with verified credentials can annotate spikes / link primary sources.
-          </p>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <div>
-            <CardTitle>System</CardTitle>
-            <CardSubtitle>Account-domain backend status</CardSubtitle>
           </div>
-        </CardHeader>
-        <ul className="space-y-2 text-sm">
-          <li className="flex items-center justify-between">
-            <span>Auth (Clerk)</span>
-            <Badge variant={user ? "success" : "warn"}>{user ? "signed in" : "anonymous"}</Badge>
-          </li>
-          <li className="flex items-center justify-between">
-            <span>Database (Neon Postgres)</span>
-            <Badge variant={isDbReady ? "success" : "warn"}>{isDbReady ? "connected" : "not connected"}</Badge>
-          </li>
-          <li className="flex items-center justify-between">
-            <span>Email (Resend)</span>
-            <Badge>not provisioned</Badge>
-          </li>
-        </ul>
-        <p className="text-xs text-[var(--color-fg-muted)] mt-4">
-          Subscription / API-key / annotation features land once schema migrations run and Resend is connected.
-          Track progress in <a href="/sources" className="text-blue-400 hover:text-blue-300">/sources <ExternalLink className="inline h-3 w-3" /></a>.
-        </p>
-      </Card>
+        </Card>
+      )}
+
+      <AccountClient
+        initialSubs={subs.map((s) => ({
+          id: s.id,
+          name: s.name,
+          channel: s.channel,
+          target: s.target,
+          filter: s.filter as Record<string, unknown>,
+          active: s.active === 1,
+          createdAt: typeof s.createdAt === "string" ? s.createdAt : s.createdAt.toISOString(),
+        }))}
+        initialKeys={keys.map((k) => ({
+          id: k.id,
+          name: k.name,
+          prefix: k.prefix,
+          rateLimitPerMinute: k.rateLimitPerMinute,
+          createdAt: typeof k.createdAt === "string" ? k.createdAt : k.createdAt.toISOString(),
+          lastUsedAt: k.lastUsedAt ? (typeof k.lastUsedAt === "string" ? k.lastUsedAt : k.lastUsedAt.toISOString()) : null,
+        }))}
+      />
     </>
   );
 }
