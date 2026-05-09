@@ -6,7 +6,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[ /]/g, "-");
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();
-  const main = ["", "/surveillance", "/outbreaks", "/analytics", "/reports", "/status"].map((p) => ({
+  const main = ["", "/surveillance", "/outbreaks", "/risk", "/compare", "/analytics", "/reports", "/status"].map((p) => ({
     url: `${BASE}${p}`,
     lastModified: now,
     changeFrequency: "daily" as const,

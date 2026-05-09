@@ -37,7 +37,7 @@ export function WorldMap({ data }: Props) {
   const [hover, setHover] = useState<{ name: string; iso?: string; record?: SurveillanceRecord; x: number; y: number } | null>(null);
 
   useEffect(() => {
-    fetch("https://cdn.jsdelivr.net/npm/world-atlas@3/countries-110m.json")
+    fetch("/world-110m.json")
       .then((r) => r.json())
       .then((topology) => {
         const fc = feature(topology, topology.objects.countries) as unknown as FeatureCollection<Geometry, { name: string }>;

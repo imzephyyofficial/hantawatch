@@ -6,6 +6,8 @@ import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card"
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { outbreakEvents, surveillanceData } from "@/lib/data";
 import { cfr, fmt, fmtCfr, fmtDate } from "@/lib/format";
+import { JsonLd } from "@/components/json-ld";
+import { outbreakSchema } from "@/lib/jsonld";
 import type { Severity } from "@/lib/types";
 
 const SEVERITY_BADGE: Record<Severity, BadgeVariant> = {
@@ -27,6 +29,13 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
   return {
     title: ev.title,
     description: ev.body,
+    openGraph: {
+      title: ev.title,
+      description: ev.body,
+      images: [{ url: `/api/og/outbreak/${ev.id}`, width: 1200, height: 630 }],
+    },
+    twitter: { card: "summary_large_image", images: [`/api/og/outbreak/${ev.id}`] },
+    alternates: { canonical: `/outbreaks/${ev.id}` },
   };
 }
 
@@ -42,6 +51,7 @@ export default async function Page({ params }: { params: Promise<Params> }) {
 
   return (
     <>
+      <JsonLd data={outbreakSchema(ev)} />
       <Topbar title={ev.title} subtitle={`${ev.flag} ${ev.country} · ${fmtDate(ev.date)}`} />
 
       <Card className={`mb-8 border-l-[3px] ${ev.severity === "high" ? "border-l-red-500" : ev.severity === "medium" ? "border-l-amber-500" : "border-l-blue-500"}`}>

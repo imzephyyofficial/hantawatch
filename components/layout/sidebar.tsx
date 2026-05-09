@@ -6,9 +6,11 @@ import { useState } from "react";
 import {
   BarChart3,
   FileText,
+  GitCompare,
   LayoutDashboard,
   Menu,
   Search,
+  ShieldAlert,
   Siren,
   X,
 } from "lucide-react";
@@ -19,6 +21,8 @@ const NAV = [
   { href: "/", label: "Dashboard", Icon: LayoutDashboard, match: ["/", "/dashboard"] },
   { href: "/surveillance", label: "Surveillance", Icon: Search, match: ["/surveillance"] },
   { href: "/outbreaks", label: "Outbreaks", Icon: Siren, match: ["/outbreaks"], badge: true },
+  { href: "/risk", label: "Risk index", Icon: ShieldAlert, match: ["/risk"] },
+  { href: "/compare", label: "Compare", Icon: GitCompare, match: ["/compare"] },
   { href: "/analytics", label: "Analytics", Icon: BarChart3, match: ["/analytics"] },
   { href: "/reports", label: "Reports", Icon: FileText, match: ["/reports"] },
 ];

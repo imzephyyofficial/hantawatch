@@ -7,6 +7,8 @@ import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { AlertFeed } from "@/components/alert-feed";
 import { surveillanceData, outbreakEvents, dataSources } from "@/lib/data";
 import { cfr, fmt, fmtCfr, fmtDate } from "@/lib/format";
+import { JsonLd } from "@/components/json-ld";
+import { countrySchema } from "@/lib/jsonld";
 import type { Status } from "@/lib/types";
 
 const STATUS_BADGE: Record<Status, BadgeVariant> = {
@@ -25,9 +27,17 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
   const { iso } = await params;
   const row = surveillanceData.find((r) => r.iso === iso);
   if (!row) return { title: "Country not found" };
+  const description = `${row.country} hantavirus surveillance — ${fmt(row.cases)} cases, ${fmt(row.deaths)} deaths, CFR ${fmtCfr(cfr(row.deaths, row.cases))} (${row.strain}).`;
   return {
     title: row.country,
-    description: `${row.country} hantavirus surveillance — ${fmt(row.cases)} cases, ${fmt(row.deaths)} deaths, CFR ${fmtCfr(cfr(row.deaths, row.cases))} (${row.strain}).`,
+    description,
+    openGraph: {
+      title: `${row.flag} ${row.country} · HantaWatch`,
+      description,
+      images: [{ url: `/api/og/country/${row.iso}`, width: 1200, height: 630 }],
+    },
+    twitter: { card: "summary_large_image", images: [`/api/og/country/${row.iso}`] },
+    alternates: { canonical: `/country/${row.iso}` },
   };
 }
 
@@ -45,6 +55,7 @@ export default async function Page({ params }: { params: Promise<Params> }) {
 
   return (
     <>
+      <JsonLd data={countrySchema(row)} />
       <Topbar title={`${row.flag} ${row.country}`} subtitle={`${row.region} · ${row.strain}`} />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

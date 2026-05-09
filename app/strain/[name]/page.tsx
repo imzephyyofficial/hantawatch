@@ -6,6 +6,8 @@ import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge";
 import { strains, surveillanceData } from "@/lib/data";
 import { cfr, fmt, fmtCfr } from "@/lib/format";
+import { JsonLd } from "@/components/json-ld";
+import { strainSchema } from "@/lib/jsonld";
 
 interface Params { name: string; }
 
@@ -19,9 +21,17 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
   const { name } = await params;
   const s = strains.find((x) => slug(x.name) === name);
   if (!s) return { title: "Strain not found" };
+  const description = `${s.name} virus — ${s.syndrome}, reservoir ${s.reservoir}, CFR ${s.cfrRange[0]}–${s.cfrRange[1]}%.`;
   return {
     title: `${s.name} virus`,
-    description: `${s.name} virus — ${s.syndrome}, reservoir ${s.reservoir}, CFR ${s.cfrRange[0]}–${s.cfrRange[1]}%.`,
+    description,
+    openGraph: {
+      title: `${s.name} virus · HantaWatch`,
+      description,
+      images: [{ url: `/api/og/strain/${slug(s.name)}`, width: 1200, height: 630 }],
+    },
+    twitter: { card: "summary_large_image", images: [`/api/og/strain/${slug(s.name)}`] },
+    alternates: { canonical: `/strain/${slug(s.name)}` },
   };
 }
 
@@ -39,6 +49,7 @@ export default async function Page({ params }: { params: Promise<Params> }) {
 
   return (
     <>
+      <JsonLd data={strainSchema(s)} />
       <Topbar title={`${s.name} virus`} subtitle={`${s.family} · causes ${s.syndrome}`} />
 
       <Card className="mb-8">

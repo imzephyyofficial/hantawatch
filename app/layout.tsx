@@ -3,6 +3,10 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { ThemeProvider } from "@/components/layout/theme-provider";
+import { JsonLd } from "@/components/json-ld";
+import { datasetSchema, organizationSchema } from "@/lib/jsonld";
+import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -28,8 +32,9 @@ export const metadata: Metadata = {
     title: "HantaWatch — Global Hantavirus Surveillance",
     description: "Real-time-ish surveillance for hantavirus activity worldwide.",
     type: "website",
+    images: [{ url: "/api/og", width: 1200, height: 630 }],
   },
-  twitter: { card: "summary_large_image" },
+  twitter: { card: "summary_large_image", images: ["/api/og"] },
   robots: { index: true, follow: true },
 };
 
@@ -46,6 +51,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" data-theme="dark" suppressHydrationWarning className={`${inter.variable} ${jetbrains.variable}`}>
       <body>
+        <JsonLd data={[organizationSchema(), datasetSchema()]} />
         <ThemeProvider />
         <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:bg-blue-500 focus:text-white focus:px-4 focus:py-3 focus:z-50">
           Skip to main content
@@ -56,6 +62,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             {children}
           </main>
         </div>
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
