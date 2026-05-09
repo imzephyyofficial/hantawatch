@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+@variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+@theme {
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-mono-jetbrains), ui-monospace, "SF Mono", Consolas, monospace;
+
+  --color-bg: #0a0f1a;
+  --color-bg-secondary: #111827;
+  --color-bg-tertiary: #1f2937;
+  --color-bg-card: rgba(31, 41, 55, 0.7);
+  --color-bg-hover: rgba(55, 65, 81, 0.5);
+  --color-bg-input: #0f172a;
+  --color-border: rgba(55, 65, 81, 0.6);
+  --color-border-soft: rgba(75, 85, 99, 0.4);
+
+  --color-fg: #f9fafb;
+  --color-fg-secondary: #d1d5db;
+  --color-fg-muted: #9ca3af;
+
+  --color-brand: #3b82f6;
+  --color-success: #22c55e;
+  --color-warn: #f59e0b;
+  --color-danger: #ef4444;
+  --color-purple: #a855f7;
+  --color-cyan: #06b6d4;
+}
+
+[data-theme="light"] {
+  --color-bg: #f8fafc;
+  --color-bg-secondary: #ffffff;
+  --color-bg-tertiary: #f1f5f9;
+  --color-bg-card: rgba(255, 255, 255, 0.85);
+  --color-bg-hover: rgba(241, 245, 249, 0.7);
+  --color-bg-input: #ffffff;
+  --color-border: rgba(203, 213, 225, 0.8);
+  --color-border-soft: rgba(226, 232, 240, 0.9);
+  --color-fg: #0f172a;
+  --color-fg-secondary: #334155;
+  --color-fg-muted: #64748b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: linear-gradient(135deg, var(--color-bg) 0%, #0f172a 50%, var(--color-bg) 100%);
+  color: var(--color-fg);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+[data-theme="light"] body {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #f8fafc 100%);
+}
+
+::selection {
+  background: var(--color-brand);
+  color: white;
+}
+
+/* Recharts dark mode tweaks */
+.recharts-cartesian-grid line {
+  stroke: var(--color-border-soft);
+}
+.recharts-default-tooltip {
+  background: var(--color-bg-secondary) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: 8px !important;
+  color: var(--color-fg) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; color: black; }
+}
