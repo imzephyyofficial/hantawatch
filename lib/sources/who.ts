@@ -12,7 +12,7 @@
  *   - severity heuristic
  */
 
-import type { Severity } from "../types";
+import type { CaseBreakdown, Severity } from "../types";
 
 export interface WhoEvent {
   id: string;                 // WHO UrlName (e.g. "2026-DON600")
@@ -21,8 +21,7 @@ export interface WhoEvent {
   summary: string;
   overview: string;
   countries: string[];        // distinct countries mentioned
-  totalCases: number | null;
-  totalDeaths: number | null;
+  breakdown: CaseBreakdown;
   cfrPct: number | null;
   strain: string | null;      // best guess (Andes / Sin Nombre / Hantaan / Puumala / Seoul / Laguna Negra)
   severity: Severity;
@@ -80,12 +79,14 @@ function parseEvent(item: WhoApiItem): WhoEvent {
   const summary = strip(item.Summary ?? "");
   const overview = strip(item.Overview ?? "");
   const epidemiology = strip(item.Epidemiology ?? "");
+  const corpus = `${summary} ${overview}`;
 
   const countries = extractCountries(`${summary} ${overview} ${item.Response ?? ""}`);
-  const { totalCases, totalDeaths, cfrPct } = extractCounts(summary);
+  const breakdown = extractBreakdown(corpus);
+  const cfrPct = extractCfr(corpus, breakdown);
   const strain = extractStrain(`${summary} ${overview} ${epidemiology}`);
   const severity: Severity =
-    /multi.?country|cluster|outbreak/i.test(item.Title ?? "") || (totalDeaths ?? 0) > 0
+    /multi.?country|cluster|outbreak/i.test(item.Title ?? "") || (breakdown.deceased ?? 0) > 0
       ? "high"
       : "medium";
 
@@ -96,8 +97,7 @@ function parseEvent(item: WhoApiItem): WhoEvent {
     summary,
     overview,
     countries,
-    totalCases,
-    totalDeaths,
+    breakdown,
     cfrPct,
     strain,
     severity,
@@ -125,36 +125,81 @@ function extractCountries(text: string): string[] {
   return Array.from(found);
 }
 
-function extractCounts(summary: string): { totalCases: number | null; totalDeaths: number | null; cfrPct: number | null } {
-  // "a total of eight cases, including three deaths (case fatality ratio 38%)"
-  // "8 cases including 3 deaths"
-  // Try multiple patterns. Numbers are sometimes spelled out (one..twenty), sometimes digits.
-  const wordToNum: Record<string, number> = {
-    one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
-    eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17,
-    eighteen: 18, nineteen: 19, twenty: 20,
-  };
-  const numRegex = "(\\d{1,5}|" + Object.keys(wordToNum).join("|") + ")";
+const WORD_TO_NUM: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17,
+  eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50,
+};
+const NUM = `(\\d{1,5}|${Object.keys(WORD_TO_NUM).join("|")})`;
 
-  const parse = (s: string) => {
-    const n = Number(s);
-    return Number.isFinite(n) ? n : (wordToNum[s.toLowerCase()] ?? null);
-  };
+function parseNum(s: string): number | null {
+  const n = Number(s);
+  if (Number.isFinite(n)) return n;
+  return WORD_TO_NUM[s.toLowerCase()] ?? null;
+}
 
-  const casesMatch = summary.match(new RegExp(`(?:total of\\s+)?${numRegex}\\s+cases?`, "i"));
-  const deathsMatch = summary.match(new RegExp(`(?:including\\s+)?${numRegex}\\s+deaths?`, "i"));
-  const cfrMatch = summary.match(/case\s+fatality\s+rat\w+\s+(\d{1,3}(?:\.\d+)?)\s*%?/i);
+function firstMatch(text: string, patterns: RegExp[]): number | null {
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (m) {
+      const n = parseNum(m[1]);
+      if (n != null) return n;
+    }
+  }
+  return null;
+}
 
-  const totalCases = casesMatch ? parse(casesMatch[1]) : null;
-  const totalDeaths = deathsMatch ? parse(deathsMatch[1]) : null;
-  const cfrFromText = cfrMatch ? parseFloat(cfrMatch[1]) : null;
-  const cfrComputed = totalCases && totalDeaths != null ? (totalDeaths / totalCases) * 100 : null;
+function extractBreakdown(text: string): CaseBreakdown {
+  const reported = firstMatch(text, [
+    new RegExp(`(?:total of\\s+|reported\\s+a\\s+total\\s+of\\s+)?${NUM}\\s+cases?`, "i"),
+    new RegExp(`${NUM}\\s+(?:total\\s+)?cases?\\s+(?:have\\s+been\\s+)?reported`, "i"),
+  ]);
 
-  return {
-    totalCases,
-    totalDeaths,
-    cfrPct: cfrFromText ?? cfrComputed,
-  };
+  const confirmed = firstMatch(text, [
+    new RegExp(`${NUM}\\s+(?:confirmed|laboratory[- ]confirmed)\\s+cases?`, "i"),
+    new RegExp(`${NUM}\\s+cases?\\s+(?:have\\s+been\\s+)?(?:laboratory[- ]?)?confirmed`, "i"),
+    new RegExp(`(?:six|seven|eight|nine|ten|eleven|twelve|\\d{1,5})\\s+\\((${NUM.slice(1, -1)})\\s+confirmed`, "i"),
+  ]);
+
+  const probable = firstMatch(text, [
+    new RegExp(`${NUM}\\s+(?:probable|suspected)\\s+cases?`, "i"),
+    new RegExp(`(?:and\\s+)?${NUM}\\s+probable`, "i"),
+  ]);
+
+  const hospitalized = firstMatch(text, [
+    // "four patients are currently hospitalised"
+    new RegExp(`${NUM}\\s+(?:patients?|cases?)(?:\\s+\\w+){0,3}\\s+(?:hospitalised|hospitalized|admitted)`, "i"),
+    new RegExp(`${NUM}\\s+(?:hospitalisations?|hospitalizations?)`, "i"),
+  ]);
+
+  const critical = firstMatch(text, [
+    new RegExp(`${NUM}\\s+(?:critically\\s+ill|in\\s+intensive\\s+care|in\\s+ICU)`, "i"),
+    new RegExp(`(?:one|${NUM})\\s+(?:in\\s+intensive\\s+care|critically\\s+ill)`, "i"),
+  ]);
+
+  const deceased = firstMatch(text, [
+    new RegExp(`(?:including\\s+|of\\s+(?:which|whom)\\s+)?${NUM}\\s+deaths?`, "i"),
+    new RegExp(`${NUM}\\s+(?:fatalities|fatal\\s+cases?)`, "i"),
+    new RegExp(`(?:with|including)\\s+${NUM}\\s+death`, "i"),
+  ]);
+
+  const recovered = firstMatch(text, [
+    // "five patients have recovered" / "five patients were discharged"
+    new RegExp(`${NUM}\\s+(?:patients?|cases?)(?:\\s+\\w+){0,3}\\s+(?:recovered|discharged|recovered\\s+and\\s+discharged)`, "i"),
+    new RegExp(`${NUM}\\s+recoveries`, "i"),
+    new RegExp(`${NUM}\\s+(?:fully\\s+)?recovered`, "i"),
+  ]);
+
+  return { reported, confirmed, probable, hospitalized, critical, deceased, recovered };
+}
+
+function extractCfr(text: string, b: CaseBreakdown): number | null {
+  const direct = text.match(/case\s+fatality\s+rat\w+\s+(?:of\s+)?(\d{1,3}(?:\.\d+)?)\s*%?/i);
+  if (direct) return parseFloat(direct[1]);
+  if (b.reported && b.deceased != null && b.reported > 0) {
+    return (b.deceased / b.reported) * 100;
+  }
+  return null;
 }
 
 function extractStrain(text: string): string | null {

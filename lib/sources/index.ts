@@ -1,19 +1,32 @@
 /**
  * Combined live data layer.
  *
- * Pulls from every active source in parallel and produces:
- *   - countrySnapshots: per-country numbers we can verify (currently US from CDC,
- *     plus countries listed in active WHO DON entries — count fields stay null
- *     when WHO doesn't publish per-country breakdown)
- *   - events: WHO DON entries normalized to OutbreakEvent shape
- *   - sources: per-source freshness + status
+ * Active sources fanned out in parallel:
+ *   - WHO Disease Outbreak News (OData API)         — events + flagged countries
+ *   - CDC hantavirus cases page (HTML scrape)       — US cumulative since 1993
+ *   - CDC NNDSS Weekly Tables (SODA API)            — US YTD + per-state
+ *   - Wikipedia REST API                            — reference content
  *
- * Cached at the edge for 6h via the underlying source fetchers.
+ * Aggregates into:
+ *   - countries:         CountrySnapshot[] with attribution per row
+ *   - events:            OutbreakEvent[] from WHO
+ *   - usWeekly:          NNDSS weekly history + per-state breakdown
+ *   - sources:           per-source freshness + status
+ *
+ * Cached for 6h via Next fetch revalidation.
  */
 
 import { fetchWhoEvents, type WhoEvent } from "./who";
 import { fetchCdcUs, type CdcSnapshot } from "./cdc";
-import type { OutbreakEvent, Region, Status } from "../types";
+import { fetchNndss, type NndssSnapshot } from "./nndss";
+import type { CaseBreakdown, OutbreakEvent, Region, Status } from "../types";
+
+const EMPTY_BREAKDOWN: CaseBreakdown = {
+  reported: null, confirmed: null, probable: null, hospitalized: null,
+  critical: null, deceased: null, recovered: null,
+};
+
+export type { CaseBreakdown };
 
 export interface CountrySnapshot {
   iso: string;
@@ -25,33 +38,45 @@ export interface CountrySnapshot {
   cfrPct: number | null;
   strain: string | null;
   status: Status | null;
-  lastReport: string;        // ISO date
-  source: string;            // attribution
+  lastReport: string;
+  source: string;
   sourceUrl: string;
   population?: number;
   notes?: string;
 }
 
 export interface SourceFreshness {
-  source: "WHO" | "CDC";
+  source: string;
   ok: boolean;
   fetchedAt: string;
-  count: number;
   detail?: string;
+  url: string;
 }
 
 export interface LiveData {
   countries: CountrySnapshot[];
   events: OutbreakEvent[];
+  usWeekly: NndssSnapshot;
   sources: SourceFreshness[];
   fetchedAt: string;
+  /** Aggregated case breakdown across all live sources (additive). */
+  totals: CaseBreakdown;
 }
 
 /**
- * Static reference: country name → ISO-2, flag, region, population. This is
- * not surveillance data — it's geographic/demographic reference, the kind of
- * thing that wouldn't change even if every disease surveillance system on
- * Earth went dark.
+ * Convert MMWR year + week → real ISO date (Sunday of that week).
+ * MMWR week 1 is the first week with 4+ days in January (per CDC).
+ */
+function mmwrWeekToIsoDate(year: number, week: number): string {
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const week1Sunday = new Date(jan4.getTime() - jan4.getUTCDay() * 86_400_000);
+  const target = new Date(week1Sunday.getTime() + (week - 1) * 7 * 86_400_000);
+  return target.toISOString().slice(0, 10);
+}
+
+/**
+ * Country reference: name → iso, flag, region, population. This is geographic
+ * fact, not surveillance data.
  */
 const COUNTRY_REF: Record<
   string,
@@ -97,71 +122,143 @@ const COUNTRY_REF: Record<
 
 export async function fetchLive(): Promise<LiveData> {
   const fetchedAt = new Date().toISOString();
-  const [whoResult, cdcResult] = await Promise.all([fetchWhoEvents(), fetchCdcUs()]);
+  const [whoResult, cdcResult, nndssResult] = await Promise.all([
+    fetchWhoEvents(),
+    fetchCdcUs(),
+    fetchNndss(),
+  ]);
 
-  const countries = composeCountrySnapshots(whoResult.events, cdcResult);
+  const countries = composeCountrySnapshots(whoResult.events, cdcResult, nndssResult);
   const events = whoResult.events.map(toOutbreakEvent);
+  const totals = aggregateTotals(whoResult.events, nndssResult, cdcResult);
 
   return {
     countries,
     events,
+    usWeekly: nndssResult,
+    totals,
     fetchedAt,
     sources: [
       {
-        source: "WHO",
+        source: "WHO Disease Outbreak News",
+        url: "https://www.who.int/emergencies/disease-outbreak-news",
         ok: whoResult.ok,
         fetchedAt: whoResult.fetchedAt,
-        count: whoResult.events.length,
-        detail: whoResult.ok ? `${whoResult.events.length} DON entries` : "fetch failed",
+        detail: whoResult.ok ? `${whoResult.events.length} hantavirus DON entries` : "fetch failed",
       },
       {
-        source: "CDC",
+        source: "CDC Hantavirus Cases (cumulative)",
+        url: cdcResult.sourceUrl,
         ok: cdcResult.ok,
         fetchedAt: cdcResult.fetchedAt,
-        count: cdcResult.cumulativeCases ?? 0,
         detail: cdcResult.ok
           ? `${cdcResult.cumulativeCases} cumulative US cases as of end of ${cdcResult.asOfYear}`
+          : "fetch failed",
+      },
+      {
+        source: "CDC NNDSS Weekly Tables",
+        url: nndssResult.sourceUrl,
+        ok: nndssResult.ok,
+        fetchedAt: nndssResult.fetchedAt,
+        detail: nndssResult.ok
+          ? `${nndssResult.ytdCombined ?? 0} US cases YTD${nndssResult.reportingYear ? ` ${nndssResult.reportingYear}` : ""}` +
+            (nndssResult.reportingWeek ? `, week ${nndssResult.reportingWeek}` : "") +
+            ` · ${nndssResult.stateRows.length} states reporting`
           : "fetch failed",
       },
     ],
   };
 }
 
-function composeCountrySnapshots(whoEvents: WhoEvent[], cdc: CdcSnapshot): CountrySnapshot[] {
-  const byCountry = new Map<string, CountrySnapshot>();
+function aggregateTotals(
+  events: WhoEvent[],
+  nndss: NndssSnapshot,
+  cdc: CdcSnapshot
+): CaseBreakdown {
+  const totals: CaseBreakdown = { ...EMPTY_BREAKDOWN };
 
-  // CDC: US cumulative
-  if (cdc.ok && cdc.cumulativeCases != null) {
-    const ref = COUNTRY_REF["United States"]!;
+  // Pull the most recent WHO event's breakdown — represents the active outbreak
+  if (events.length > 0) {
+    const b = events[0].breakdown;
+    for (const k of Object.keys(totals) as Array<keyof CaseBreakdown>) {
+      if (b[k] != null) totals[k] = (totals[k] ?? 0) + b[k]!;
+    }
+  }
+
+  // Add NNDSS YTD US numbers as additional reported cases
+  if (nndss.ok && nndss.ytdCombined != null) {
+    totals.reported = (totals.reported ?? 0) + nndss.ytdCombined;
+    totals.confirmed = (totals.confirmed ?? 0) + nndss.ytdCombined;
+  }
+
+  // CDC cumulative is historical context, not added to current totals
+  void cdc;
+
+  return totals;
+}
+
+function composeCountrySnapshots(
+  whoEvents: WhoEvent[],
+  cdc: CdcSnapshot,
+  nndss: NndssSnapshot
+): CountrySnapshot[] {
+  const byCountry = new Map<string, CountrySnapshot>();
+  const usRef = COUNTRY_REF["United States"]!;
+
+  // 1) US row: prefer NNDSS (current YTD) when available, with CDC cumulative as a note.
+  if (nndss.ok && nndss.ytdCombined != null) {
+    const cumulativeNote = cdc.ok && cdc.cumulativeCases != null
+      ? ` · ${cdc.cumulativeCases.toLocaleString()} cumulative since 1993 (CDC)`
+      : "";
     byCountry.set("United States", {
-      iso: ref.iso,
+      iso: usRef.iso,
       country: "United States",
-      flag: ref.flag,
-      region: ref.region,
+      flag: usRef.flag,
+      region: usRef.region,
+      cases: nndss.ytdCombined,
+      deaths: null,
+      cfrPct: null,
+      strain: "Sin Nombre",
+      status: "active",
+      lastReport: nndss.reportingYear && nndss.reportingWeek
+        ? mmwrWeekToIsoDate(nndss.reportingYear, nndss.reportingWeek)
+        : new Date().toISOString().slice(0, 10),
+      source: `CDC NNDSS · YTD ${nndss.reportingYear} through week ${nndss.reportingWeek}`,
+      sourceUrl: nndss.sourceUrl,
+      population: usRef.population,
+      notes: `HPS: ${nndss.ytdHps ?? 0}, non-HPS infection: ${nndss.ytdNonHps ?? 0}${cumulativeNote}`,
+    });
+  } else if (cdc.ok && cdc.cumulativeCases != null) {
+    byCountry.set("United States", {
+      iso: usRef.iso,
+      country: "United States",
+      flag: usRef.flag,
+      region: usRef.region,
       cases: cdc.cumulativeCases,
       deaths: null,
       cfrPct: null,
-      strain: "Sin Nombre",          // dominant US strain — reference fact
+      strain: "Sin Nombre",
       status: "active",
       lastReport: `${cdc.asOfYear ?? new Date().getUTCFullYear()}-12-31`,
       source: `CDC (cumulative through end of ${cdc.asOfYear})`,
       sourceUrl: cdc.sourceUrl,
-      population: ref.population,
+      population: usRef.population,
       notes: "US cumulative since surveillance began in 1993",
     });
   }
 
-  // WHO DON: countries mentioned in current events
-  // We don't have per-country case counts here, but we surface that the
-  // country is currently flagged in a WHO DON, which is the strongest live
-  // signal there is for "this country has active hantavirus reporting".
+  // 2) WHO DON: countries flagged in the latest event get a row (or status bump).
   if (whoEvents.length > 0) {
-    const latest = whoEvents[0]; // ordered desc by publication date in fetcher
+    const latest = whoEvents[0];
     for (const name of latest.countries) {
       const ref = COUNTRY_REF[name];
       if (!ref) continue;
-      // Don't overwrite the CDC US row
-      if (byCountry.has(name)) continue;
+      const existing = byCountry.get(name);
+      if (existing) {
+        // bump existing row to outbreak status if we already have it
+        existing.status = "outbreak";
+        continue;
+      }
       byCountry.set(name, {
         iso: ref.iso,
         country: name,
@@ -181,7 +278,6 @@ function composeCountrySnapshots(whoEvents: WhoEvent[], cdc: CdcSnapshot): Count
     }
   }
 
-  // Stable order: outbreak first, then cases desc, then country name
   return Array.from(byCountry.values()).sort((a, b) => {
     const sw = (s: Status | null) => (s === "outbreak" ? 0 : s === "active" ? 1 : 2);
     if (sw(a.status) !== sw(b.status)) return sw(a.status) - sw(b.status);
@@ -209,6 +305,7 @@ function toOutbreakEvent(e: WhoEvent): OutbreakEvent {
       e.summary.length > 320
         ? e.summary.slice(0, 317).trimEnd() + "…"
         : e.summary,
+    breakdown: e.breakdown,
     source: "WHO Disease Outbreak News",
     sourceUrl: e.url,
   };

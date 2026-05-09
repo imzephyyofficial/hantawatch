@@ -10,6 +10,7 @@ import { dataSources } from "@/lib/data";
 import { cfr, fmt, fmtCfr, fmtDate } from "@/lib/format";
 import { JsonLd } from "@/components/json-ld";
 import { countrySchema } from "@/lib/jsonld";
+import { UsWeeklyChart } from "@/components/charts/us-weekly-chart";
 import type { Status } from "@/lib/types";
 
 const STATUS_BADGE: Record<Status, BadgeVariant> = {
@@ -51,7 +52,7 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
 
 export default async function Page({ params }: { params: Promise<Params> }) {
   const { iso } = await params;
-  const { countries, events } = await fetchLive();
+  const { countries, events, usWeekly } = await fetchLive();
   const row = countries.find((r) => r.iso === iso);
   if (!row) notFound();
 
@@ -116,6 +117,48 @@ export default async function Page({ params }: { params: Promise<Params> }) {
           {row.notes && <Field label="Notes" value={row.notes} />}
         </dl>
       </Card>
+
+      {iso === "us" && usWeekly.ok && usWeekly.weeklyHistory.length > 0 && (
+        <section className="mb-8">
+          <h2 className="text-lg font-bold tracking-tight mb-4">US weekly NNDSS reporting</h2>
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle>Last {usWeekly.weeklyHistory.length} reporting weeks</CardTitle>
+                <CardSubtitle>
+                  CDC NNDSS · cumulative YTD per label · most recent: {usWeekly.reportingYear} week {usWeekly.reportingWeek}
+                </CardSubtitle>
+              </div>
+            </CardHeader>
+            <UsWeeklyChart data={usWeekly.weeklyHistory} />
+          </Card>
+        </section>
+      )}
+
+      {iso === "us" && usWeekly.ok && usWeekly.stateRows.length > 0 && (
+        <section className="mb-8">
+          <h2 className="text-lg font-bold tracking-tight mb-4">Per-state breakdown ({usWeekly.reportingYear})</h2>
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle>{usWeekly.stateRows.length} states with cases</CardTitle>
+                <CardSubtitle>YTD cumulative count from CDC NNDSS</CardSubtitle>
+              </div>
+              <div className="font-mono text-base font-bold">
+                {usWeekly.stateRows.reduce((s, r) => s + r.cumulative, 0)} total
+              </div>
+            </CardHeader>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {usWeekly.stateRows.slice(0, 30).map((s) => (
+                <div key={s.state} className="flex items-center justify-between p-2 rounded bg-[var(--color-bg-tertiary)] text-sm">
+                  <span>{s.state}</span>
+                  <span className="font-mono font-semibold">{s.cumulative}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </section>
+      )}
 
       {countryEvents.length > 0 && (
         <section className="mb-8">

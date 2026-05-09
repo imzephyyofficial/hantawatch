@@ -6,9 +6,11 @@ import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge";
 import { strains } from "@/lib/data";
 import { fetchLive } from "@/lib/sources";
+import { fetchWikiSummary, STRAIN_WIKI_SLUG } from "@/lib/sources/wikipedia";
 import { cfr, fmt, fmtCfr } from "@/lib/format";
 import { JsonLd } from "@/components/json-ld";
 import { strainSchema } from "@/lib/jsonld";
+import { ExternalLink } from "lucide-react";
 
 interface Params { name: string; }
 
@@ -43,7 +45,11 @@ export default async function Page({ params }: { params: Promise<Params> }) {
   const s = strains.find((x) => slug(x.name) === name);
   if (!s) notFound();
 
-  const { countries } = await fetchLive();
+  const wikiSlug = STRAIN_WIKI_SLUG[s.name];
+  const [{ countries }, wiki] = await Promise.all([
+    fetchLive(),
+    wikiSlug ? fetchWikiSummary(wikiSlug) : Promise.resolve(null),
+  ]);
   const reportingCountries = countries.filter((r) =>
     (r.strain ?? "").toLowerCase().includes(s.name.toLowerCase())
   );
@@ -86,6 +92,21 @@ export default async function Page({ params }: { params: Promise<Params> }) {
           />
         </dl>
       </Card>
+
+      {wiki && wiki.ok && wiki.extract && (
+        <Card className="mb-8">
+          <CardHeader>
+            <div>
+              <CardTitle>Encyclopedia</CardTitle>
+              <CardSubtitle>Live summary from Wikipedia · {wiki.title}</CardSubtitle>
+            </div>
+            <a href={wiki.url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-400 hover:text-blue-300">
+              Read on Wikipedia <ExternalLink className="inline h-3 w-3" />
+            </a>
+          </CardHeader>
+          <p className="text-[var(--color-fg-secondary)] leading-relaxed">{wiki.extract}</p>
+        </Card>
+      )}
 
       {reportingCountries.length > 0 && (
         <Card className="mb-8">

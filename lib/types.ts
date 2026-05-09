@@ -16,6 +16,16 @@ export interface SurveillanceRecord {
   notes?: string;
 }
 
+export interface CaseBreakdown {
+  reported: number | null;     // total reported
+  confirmed: number | null;    // laboratory-confirmed
+  probable: number | null;     // probable / suspected
+  hospitalized: number | null;
+  critical: number | null;     // ICU / critically ill
+  deceased: number | null;     // deaths
+  recovered: number | null;    // discharged / recovered
+}
+
 export interface OutbreakEvent {
   id: string;
   date: string;         // ISO date
@@ -25,6 +35,7 @@ export interface OutbreakEvent {
   severity: Severity;
   title: string;
   body: string;
+  breakdown?: CaseBreakdown;
   source?: string;
   sourceUrl?: string;
 }

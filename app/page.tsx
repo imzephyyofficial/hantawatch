@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { Globe2, Siren, Skull, TrendingUp, Radio, ExternalLink } from "lucide-react";
+import { Radio, ExternalLink } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
-import { StatCard } from "@/components/cards/stat-card";
+import { BigCounter } from "@/components/cards/big-counter";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StrainDonut } from "@/components/charts/strain-donut";
@@ -11,14 +11,10 @@ import { AlertFeed } from "@/components/alert-feed";
 import { dataSources } from "@/lib/data";
 import { fetchLive } from "@/lib/sources";
 import {
-  highestCfr,
   outbreakRows,
-  overallCfr,
   regionTotals,
   snapshotDate,
   strainAggregates,
-  totalCases,
-  totalDeaths,
 } from "@/lib/metrics";
 import { fmt, fmtCfr, fmtDate } from "@/lib/format";
 
@@ -26,13 +22,9 @@ export const revalidate = 21600;
 
 export default async function DashboardPage() {
   const live = await fetchLive();
-  const { countries, events, sources } = live;
+  const { countries, events, sources, totals } = live;
 
-  const cases = totalCases(countries);
-  const deaths = totalDeaths(countries);
-  const cfrPct = overallCfr(countries);
   const ob = outbreakRows(countries);
-  const top = highestCfr(countries);
   const strains = strainAggregates(countries).filter((s) => s.cases > 0);
   const regions = regionTotals(countries);
 
@@ -46,47 +38,68 @@ export default async function DashboardPage() {
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([period, count]) => ({ period, count }));
 
+  // CFR for the most recent WHO event
+  const latestEvent = events[0];
+  const cfr = latestEvent?.breakdown
+    ? (latestEvent.breakdown.deceased && latestEvent.breakdown.reported
+        ? (latestEvent.breakdown.deceased / latestEvent.breakdown.reported) * 100
+        : null)
+    : null;
+
   return (
     <>
       <Topbar
         title="Global Surveillance"
-        subtitle="Live hantavirus activity pulled from WHO Disease Outbreak News and CDC"
+        subtitle="Live hantavirus tracking · WHO Disease Outbreak News · CDC NNDSS · Wikipedia reference"
         snapshotDate={snapshotDate(countries)}
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
-        <StatCard
-          title="Reported cases"
-          value={cases > 0 ? fmt(cases) : "—"}
-          meta={cases > 0 ? `across ${countries.filter((c) => c.cases != null && c.cases > 0).length} reporting countries` : "no live counts available"}
-          icon={<Globe2 className="h-4 w-4" />}
+      {/* JHU CSSE-style big counter grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 mb-8">
+        <BigCounter
+          label="Reported"
+          value={totals.reported != null ? fmt(totals.reported) : "—"}
+          sub="Total cases reported"
           accent="danger"
         />
-        <StatCard
-          title="Active WHO alerts"
-          value={events.length}
-          meta={
-            events.length > 0
-              ? events.slice(0, 1).map((e) => e.title.slice(0, 42) + (e.title.length > 42 ? "…" : ""))[0]
-              : "no active WHO Disease Outbreak News"
-          }
-          icon={<Siren className="h-4 w-4" />}
+        <BigCounter
+          label="Confirmed"
+          value={totals.confirmed != null ? fmt(totals.confirmed) : "—"}
+          sub="Lab-confirmed"
           accent="warn"
         />
-        <StatCard
-          title="Reported deaths"
-          value={deaths > 0 ? fmt(deaths) : "—"}
-          meta={cfrPct > 0 ? `CFR ${fmtCfr(cfrPct)} from reporting set` : "no death figures published"}
-          icon={<Skull className="h-4 w-4" />}
+        <BigCounter
+          label="Probable"
+          value={totals.probable != null ? fmt(totals.probable) : "—"}
+          sub="Suspected / probable"
+          accent="amber"
+        />
+        <BigCounter
+          label="Hospitalized"
+          value={totals.hospitalized != null ? fmt(totals.hospitalized) : "—"}
+          sub={totals.critical != null ? `${totals.critical} in critical care` : "—"}
+          accent="cyan"
+        />
+        <BigCounter
+          label="Deceased"
+          value={totals.deceased != null ? fmt(totals.deceased) : "—"}
+          sub={cfr != null ? `CFR ${fmtCfr(cfr)} (current event)` : "—"}
           accent="purple"
         />
-        <StatCard
-          title="Highest reported CFR"
-          value={top ? fmtCfr(top.pct) : "—"}
-          meta={top ? `${top.row.country} · ${top.row.strain ?? "strain TBD"}` : "no rows with both cases and deaths"}
-          icon={<TrendingUp className="h-4 w-4" />}
-          accent="brand"
+        <BigCounter
+          label="Recovered"
+          value={totals.recovered != null ? fmt(totals.recovered) : "—"}
+          sub="Discharged"
+          accent="success"
         />
+      </div>
+
+      {/* Coverage strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8 text-sm">
+        <CoverageStat label="Countries flagged" value={countries.length} />
+        <CoverageStat label="Active WHO alerts" value={events.length} />
+        <CoverageStat label="Outbreak status" value={ob.length} />
+        <CoverageStat label="Live sources" value={`${sources.filter((s) => s.ok).length} / ${sources.length}`} />
       </div>
 
       <Card className="mb-8">
@@ -96,7 +109,7 @@ export default async function DashboardPage() {
             <CardSubtitle>
               {countries.length === 0
                 ? "Awaiting WHO + CDC data — no countries currently flagged"
-                : `${countries.length} countr${countries.length === 1 ? "y" : "ies"} flagged · hover for detail`}
+                : `${countries.length} countr${countries.length === 1 ? "y" : "ies"} flagged · hover for detail · click to drill in`}
             </CardSubtitle>
           </div>
         </CardHeader>
@@ -108,7 +121,7 @@ export default async function DashboardPage() {
           <CardHeader>
             <div>
               <CardTitle>WHO Disease Outbreak News — by year</CardTitle>
-              <CardSubtitle>Hantavirus DON publication frequency from the WHO API</CardSubtitle>
+              <CardSubtitle>Hantavirus DON publication frequency</CardSubtitle>
             </div>
           </CardHeader>
           {eventFreq.length > 0 ? (
@@ -128,7 +141,7 @@ export default async function DashboardPage() {
             <StrainDonut data={strains} />
           ) : (
             <div className="text-sm text-[var(--color-fg-muted)] py-12 text-center px-4">
-              No country in the current live set has a published case count.
+              Awaiting per-strain case counts from live sources.
             </div>
           )}
         </Card>
@@ -138,7 +151,7 @@ export default async function DashboardPage() {
         <div className="flex items-end justify-between mb-4 gap-4 flex-wrap">
           <div>
             <h2 className="text-lg font-bold tracking-tight">Regional reporting</h2>
-            <p className="text-sm text-[var(--color-fg-muted)]">Aggregated from countries currently reporting</p>
+            <p className="text-sm text-[var(--color-fg-muted)]">Aggregated from countries currently in the live set</p>
           </div>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -213,16 +226,28 @@ export default async function DashboardPage() {
   );
 }
 
+function CoverageStat({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-3 backdrop-blur-md">
+      <div className="text-[10px] uppercase tracking-wider font-semibold text-[var(--color-fg-muted)]">{label}</div>
+      <div className="text-2xl font-bold font-mono tabular-nums mt-1">{value}</div>
+    </div>
+  );
+}
+
 function Footer({ sources }: { sources: Array<{ source: string; ok: boolean; detail?: string }> }) {
   return (
     <footer className="mt-12 pt-6 border-t border-[var(--color-border-soft)] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 text-xs text-[var(--color-fg-muted)]">
       <div>
         <h4 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-fg-secondary)] mb-2.5">Live sources</h4>
         {sources.map((s) => (
-          <div key={s.source} className="py-0.5 flex items-center gap-2">
+          <div key={s.source} className="py-0.5 flex items-start gap-2">
             <span className={s.ok ? "text-emerald-400" : "text-amber-400"}>●</span>
-            <span>{s.source}</span>
-            <span className="text-[var(--color-fg-muted)]">— {s.detail}</span>
+            <span className="leading-tight">
+              <span className="font-medium">{s.source}</span>
+              <br />
+              <span className="text-[var(--color-fg-muted)]">{s.detail}</span>
+            </span>
           </div>
         ))}
       </div>
@@ -236,7 +261,7 @@ function Footer({ sources }: { sources: Array<{ source: string; ok: boolean; det
       </div>
       <div>
         <h4 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-fg-secondary)] mb-2.5">Methodology</h4>
-        <p>Country counts come from CDC for the United States and from WHO DON entries for countries currently flagged. CFR is computed only when both cases and deaths are published. No estimated or imputed figures.</p>
+        <p>Counters add the most-recent WHO Disease Outbreak News breakdown to NNDSS YTD US counts. CDC&rsquo;s cumulative-since-1993 figure is shown on the US country page as historical context, not added to current totals.</p>
       </div>
       <div>
         <h4 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-fg-secondary)] mb-2.5">Build</h4>

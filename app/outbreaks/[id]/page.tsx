@@ -59,11 +59,23 @@ export default async function Page({ params }: { params: Promise<Params> }) {
       <JsonLd data={outbreakSchema(ev)} />
       <Topbar title={ev.title} subtitle={`${ev.flag} ${ev.country} · ${fmtDate(ev.date)}`} snapshotDate={ev.date} freshness="WHO" />
 
+      {ev.breakdown && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2 mb-8">
+          <BreakdownStat label="Reported" value={ev.breakdown.reported} accent="text-red-400" />
+          <BreakdownStat label="Confirmed" value={ev.breakdown.confirmed} accent="text-amber-400" />
+          <BreakdownStat label="Probable" value={ev.breakdown.probable} accent="text-amber-300" />
+          <BreakdownStat label="Hospitalized" value={ev.breakdown.hospitalized} accent="text-cyan-400" />
+          <BreakdownStat label="Critical" value={ev.breakdown.critical} accent="text-cyan-300" />
+          <BreakdownStat label="Deceased" value={ev.breakdown.deceased} accent="text-purple-400" />
+          <BreakdownStat label="Recovered" value={ev.breakdown.recovered} accent="text-emerald-400" />
+        </div>
+      )}
+
       <Card className={`mb-8 border-l-[3px] ${ev.severity === "high" ? "border-l-red-500" : ev.severity === "medium" ? "border-l-amber-500" : "border-l-blue-500"}`}>
         <CardHeader>
           <div>
             <CardTitle>WHO Disease Outbreak News</CardTitle>
-            <CardSubtitle>Live entry from the WHO API</CardSubtitle>
+            <CardSubtitle>Live entry from the WHO API · figures parsed from the official Summary text</CardSubtitle>
           </div>
           <Badge variant={SEVERITY_BADGE[ev.severity]}>{ev.severity} severity</Badge>
         </CardHeader>
@@ -100,5 +112,16 @@ export default async function Page({ params }: { params: Promise<Params> }) {
         </section>
       )}
     </>
+  );
+}
+
+function BreakdownStat({ label, value, accent }: { label: string; value: number | null; accent: string }) {
+  return (
+    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] backdrop-blur-md p-3">
+      <div className="text-[10px] uppercase tracking-wider font-semibold text-[var(--color-fg-muted)] mb-1">{label}</div>
+      <div className={`text-2xl font-extrabold font-mono tabular-nums ${value != null ? accent : "text-[var(--color-fg-muted)]"}`}>
+        {value != null ? value.toLocaleString("en-US") : "—"}
+      </div>
+    </div>
   );
 }
