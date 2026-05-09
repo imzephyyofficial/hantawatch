@@ -2,77 +2,83 @@ import type { Metadata } from "next";
 import { Topbar } from "@/components/layout/topbar";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { snapshotDate } from "@/lib/metrics";
-import { surveillanceData, dataSources } from "@/lib/data";
+import { dataSources } from "@/lib/data";
+import { fetchLive } from "@/lib/sources";
 import { fmt, fmtDate } from "@/lib/format";
-import { fetchWhoLive } from "@/lib/live";
-
-export const revalidate = 21600;
 
 export const metadata: Metadata = {
   title: "Status",
-  description: "Data freshness and operational state of the HantaWatch dashboard.",
+  description: "Live data freshness and component status of HantaWatch.",
 };
 
+export const revalidate = 21600;
+
 export default async function Page() {
-  const live = await fetchWhoLive();
-  const snapshot = snapshotDate();
-  const lastReports = surveillanceData
-    .map((r) => r.lastReport)
-    .sort()
-    .reverse();
-  const oldest = lastReports[lastReports.length - 1];
-  const newest = lastReports[0];
+  const { countries, events, sources, fetchedAt } = await fetchLive();
+  const lastReports = countries.map((r) => r.lastReport).sort();
+  const oldest = lastReports[0];
+  const newest = lastReports[lastReports.length - 1];
 
   return (
     <>
-      <Topbar title="Status" subtitle="Data freshness and system operations" />
+      <Topbar
+        title="Status"
+        subtitle="Live data freshness and component health"
+        snapshotDate={newest}
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
         <Card>
-          <div className="text-xs uppercase tracking-wider font-semibold text-[var(--color-fg-muted)] mb-2">Snapshot date</div>
-          <div className="text-xl font-bold">{fmtDate(snapshot)}</div>
-          <div className="text-xs text-[var(--color-fg-muted)] mt-1">Most recent country report in dataset</div>
+          <div className="text-xs uppercase tracking-wider font-semibold text-[var(--color-fg-muted)] mb-2">Last live fetch</div>
+          <div className="text-base font-semibold">{new Date(fetchedAt).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })}</div>
+          <div className="text-xs text-[var(--color-fg-muted)] mt-1">Cached at the edge for 6h</div>
         </Card>
         <Card>
           <div className="text-xs uppercase tracking-wider font-semibold text-[var(--color-fg-muted)] mb-2">Reporting span</div>
-          <div className="text-base font-semibold">{fmtDate(oldest)} → {fmtDate(newest)}</div>
-          <div className="text-xs text-[var(--color-fg-muted)] mt-1">Across all countries</div>
+          <div className="text-base font-semibold">
+            {oldest ? `${fmtDate(oldest)} → ${fmtDate(newest)}` : "—"}
+          </div>
+          <div className="text-xs text-[var(--color-fg-muted)] mt-1">Across all live country rows</div>
         </Card>
         <Card>
-          <div className="text-xs uppercase tracking-wider font-semibold text-[var(--color-fg-muted)] mb-2">Records tracked</div>
-          <div className="text-xl font-bold font-mono tabular-nums">{fmt(surveillanceData.length)}</div>
-          <div className="text-xs text-[var(--color-fg-muted)] mt-1">Country-level entries</div>
+          <div className="text-xs uppercase tracking-wider font-semibold text-[var(--color-fg-muted)] mb-2">Coverage</div>
+          <div className="text-base font-semibold font-mono tabular-nums">
+            {fmt(countries.length)} countries · {fmt(events.length)} events
+          </div>
+          <div className="text-xs text-[var(--color-fg-muted)] mt-1">Live entries from upstream sources</div>
         </Card>
       </div>
+
+      <Card className="mb-6">
+        <h3 className="font-semibold mb-4">Sources</h3>
+        <ul className="space-y-3">
+          {sources.map((s) => (
+            <Row
+              key={s.source}
+              label={s.source === "WHO" ? "WHO Disease Outbreak News" : "CDC Hantavirus surveillance"}
+              status={s.ok ? "ok" : "warn"}
+              detail={s.detail ?? "—"}
+            />
+          ))}
+        </ul>
+      </Card>
 
       <Card className="mb-6">
         <h3 className="font-semibold mb-4">Components</h3>
         <ul className="space-y-3">
           <Row label="Dashboard rendering" status="ok" detail="Static + ISR (6h revalidate)" />
-          <Row label="Country surveillance fixtures" status="ok" detail="Curated baseline · refreshed manually until Phase 2 DB" />
-          <Row
-            label="WHO Disease Outbreak News (live)"
-            status={live.ok ? "ok" : "warn"}
-            detail={
-              live.ok
-                ? `${live.events.length} entr${live.events.length === 1 ? "y" : "ies"} · last fetch ${new Date(live.fetchedAt).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })}`
-                : "Last fetch failed · falling back to curated context"
-            }
-          />
-          <Row label="Daily cron (/api/cron/refresh)" status="ok" detail="Runs 06:00 UTC · revalidates dashboard, outbreaks, /api/v1/live" />
-          <Row label="CDC adapter" status="planned" detail="Phase 2 · scrape annual surveillance table" />
+          <Row label="Daily cron (/api/cron/refresh)" status="ok" detail="06:00 UTC · revalidates dashboard, outbreaks, /api/v1/live" />
+          <Row label="Public API v1" status="ok" detail="/api/v1/{countries,outbreaks,strains,metrics,live}" />
+          <Row label="Atom feed" status="ok" detail="/api/rss/outbreaks" />
           <Row label="ECDC adapter" status="planned" detail="Phase 2 · annual epi report (PDF or HTML)" />
           <Row label="PAHO adapter" status="planned" detail="Phase 2 · regional reports + Epi Alerts" />
           <Row label="Database (Neon Postgres)" status="planned" detail="Phase 2 · provision in Vercel Marketplace" />
           <Row label="Auth & subscriptions" status="planned" detail="Phase 5 · Clerk + Resend" />
-          <Row label="Public API v1" status="ok" detail="/api/v1/{countries,outbreaks,strains,metrics,live}" />
-          <Row label="Atom feed" status="ok" detail="/api/rss/outbreaks (curated + WHO live)" />
         </ul>
       </Card>
 
       <Card>
-        <h3 className="font-semibold mb-4">Source links</h3>
+        <h3 className="font-semibold mb-4">Source documents</h3>
         <ul className="space-y-2 text-sm">
           {dataSources.map((s) => (
             <li key={s.url}>

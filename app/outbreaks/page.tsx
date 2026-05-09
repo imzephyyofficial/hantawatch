@@ -1,22 +1,21 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Radio, ExternalLink } from "lucide-react";
 import { Topbar } from "@/components/layout/topbar";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { AlertFeed } from "@/components/alert-feed";
-import { Radio, ExternalLink } from "lucide-react";
-import { outbreaks } from "@/lib/metrics";
-import { outbreakEvents } from "@/lib/data";
+import { fetchLive } from "@/lib/sources";
+import { snapshotDate, outbreakRows } from "@/lib/metrics";
 import { cfr, fmt, fmtCfr, fmtDate } from "@/lib/format";
-import { fetchWhoLive } from "@/lib/live";
 import type { Status } from "@/lib/types";
-
-export const revalidate = 21600;
 
 export const metadata: Metadata = {
   title: "Active Outbreaks",
-  description: "Countries currently classified as outbreak and recent outbreak events worldwide.",
+  description: "Live WHO Disease Outbreak News entries plus countries currently flagged.",
 };
+
+export const revalidate = 21600;
 
 const STATUS_BADGE: Record<Status, BadgeVariant> = {
   active: "active",
@@ -25,51 +24,59 @@ const STATUS_BADGE: Record<Status, BadgeVariant> = {
 };
 
 export default async function Page() {
-  const active = outbreaks();
-  const live = await fetchWhoLive();
+  const { countries, events, fetchedAt } = await fetchLive();
+  const flagged = outbreakRows(countries);
 
   return (
     <>
-      <Topbar title="Active Outbreaks" subtitle="Countries currently classified outbreak and recent events" />
-
-      {live.events.length > 0 && (
-        <section className="mb-8">
-          <div className="flex items-end justify-between mb-4 gap-3 flex-wrap">
-            <div>
-              <h2 className="text-lg font-bold tracking-tight flex items-center gap-2">
-                <Radio className="h-4 w-4 text-emerald-400" /> WHO Disease Outbreak News
-              </h2>
-              <p className="text-sm text-[var(--color-fg-muted)]">
-                {live.events.length} live entr{live.events.length === 1 ? "y" : "ies"} · refreshed {fmtDate(live.fetchedAt.slice(0, 10))}
-              </p>
-            </div>
-            <a href="https://www.who.int/emergencies/disease-outbreak-news" target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-400 hover:text-blue-300">
-              View at WHO <ExternalLink className="inline h-3 w-3" />
-            </a>
-          </div>
-          <AlertFeed events={live.events} linkable={false} />
-        </section>
-      )}
+      <Topbar
+        title="Active Outbreaks"
+        subtitle="Live WHO Disease Outbreak News + countries flagged in current entries"
+        snapshotDate={snapshotDate(countries)}
+      />
 
       <section className="mb-8">
-        <div className="flex items-end justify-between mb-4">
+        <div className="flex items-end justify-between mb-4 gap-3 flex-wrap">
           <div>
-            <h2 className="text-lg font-bold tracking-tight">Active outbreaks</h2>
-            <p className="text-sm text-[var(--color-fg-muted)]">Countries with status &quot;outbreak&quot; in the current snapshot</p>
+            <h2 className="text-lg font-bold tracking-tight flex items-center gap-2">
+              <Radio className="h-4 w-4 text-emerald-400" /> WHO Disease Outbreak News
+            </h2>
+            <p className="text-sm text-[var(--color-fg-muted)]">
+              Live · {events.length} entr{events.length === 1 ? "y" : "ies"} · last fetch {fmtDate(fetchedAt.slice(0, 10))}
+            </p>
           </div>
+          <a href="https://www.who.int/emergencies/disease-outbreak-news" target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-400 hover:text-blue-300">
+            WHO source <ExternalLink className="inline h-3 w-3" />
+          </a>
         </div>
-
-        {active.length === 0 ? (
+        {events.length > 0 ? (
+          <AlertFeed events={events} />
+        ) : (
           <Card>
             <p className="text-center text-[var(--color-fg-muted)] py-12">
               <span className="text-2xl block mb-2">✓</span>
-              No countries currently classified as outbreak.
+              No active hantavirus DON entries from WHO right now.
             </p>
+          </Card>
+        )}
+      </section>
+
+      <section>
+        <div className="flex items-end justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-bold tracking-tight">Countries currently flagged</h2>
+            <p className="text-sm text-[var(--color-fg-muted)]">Listed in the most recent WHO entry</p>
+          </div>
+        </div>
+
+        {flagged.length === 0 ? (
+          <Card>
+            <p className="text-center text-[var(--color-fg-muted)] py-12">No countries currently flagged.</p>
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {active.map((r) => {
-              const pct = cfr(r.deaths, r.cases);
+            {flagged.map((r) => {
+              const pct = r.cases != null && r.deaths != null ? cfr(r.deaths, r.cases) : null;
               return (
                 <Card key={r.iso} className="border-l-[3px] border-l-red-500">
                   <CardHeader>
@@ -77,42 +84,30 @@ export default async function Page() {
                       <span className="text-2xl" aria-hidden>{r.flag}</span>
                       <div>
                         <CardTitle>{r.country}</CardTitle>
-                        <CardSubtitle>
-                          {r.region} · {r.strain}
-                        </CardSubtitle>
+                        <CardSubtitle>{r.region} · {r.strain ?? "Strain TBD"}</CardSubtitle>
                       </div>
                     </div>
-                    <Badge variant={STATUS_BADGE[r.status]}>{r.status}</Badge>
+                    {r.status && <Badge variant={STATUS_BADGE[r.status]}>{r.status}</Badge>}
                   </CardHeader>
                   <div className="grid grid-cols-3 gap-3 mb-4">
-                    <Stat label="Cases" value={fmt(r.cases)} />
-                    <Stat label="Deaths" value={fmt(r.deaths)} />
-                    <Stat label="CFR" value={fmtCfr(pct)} />
+                    <Stat label="Cases" value={r.cases != null ? fmt(r.cases) : "—"} />
+                    <Stat label="Deaths" value={r.deaths != null ? fmt(r.deaths) : "—"} />
+                    <Stat label="CFR" value={pct != null ? fmtCfr(pct) : "—"} />
                   </div>
                   <div className="text-xs text-[var(--color-fg-muted)] mb-3">
-                    Last reported: {fmtDate(r.lastReport)}
+                    Listed {fmtDate(r.lastReport)} via{" "}
+                    <a href={r.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">
+                      {r.source}
+                    </a>
                   </div>
-                  <Link
-                    href={`/country/${r.iso}`}
-                    className="text-sm font-medium text-blue-400 hover:text-blue-300"
-                  >
-                    Country deep-dive →
+                  <Link href={`/country/${r.iso}`} className="text-sm font-medium text-blue-400 hover:text-blue-300">
+                    Country page →
                   </Link>
                 </Card>
               );
             })}
           </div>
         )}
-      </section>
-
-      <section>
-        <div className="flex items-end justify-between mb-4">
-          <div>
-            <h2 className="text-lg font-bold tracking-tight">Event timeline</h2>
-            <p className="text-sm text-[var(--color-fg-muted)]">Recent surveillance signals (most recent first)</p>
-          </div>
-        </div>
-        <AlertFeed events={outbreakEvents} />
       </section>
     </>
   );

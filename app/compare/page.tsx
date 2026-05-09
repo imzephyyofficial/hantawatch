@@ -1,20 +1,28 @@
 import type { Metadata } from "next";
 import { Topbar } from "@/components/layout/topbar";
 import { CompareClient } from "./compare-client";
-import { surveillanceData } from "@/lib/data";
+import { fetchLive } from "@/lib/sources";
+import { snapshotDate } from "@/lib/metrics";
 
 export const metadata: Metadata = {
   title: "Compare countries",
-  description: "Compare 2–4 countries side-by-side on cases, deaths, CFR, strain, and risk score.",
+  description: "Compare live country data side-by-side: cases, deaths, CFR, strain, and risk score.",
 };
+
+export const revalidate = 21600;
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ c?: string }> }) {
   const sp = await searchParams;
   const requested = (sp.c ?? "").split(",").filter(Boolean).slice(0, 4);
+  const { countries } = await fetchLive();
   return (
     <>
-      <Topbar title="Compare countries" subtitle="Pick 2–4 countries to stack their metrics side-by-side" />
-      <CompareClient initial={requested} all={surveillanceData} />
+      <Topbar
+        title="Compare countries"
+        subtitle="Stack 2–4 countries from the live set side-by-side"
+        snapshotDate={snapshotDate(countries)}
+      />
+      <CompareClient initial={requested} all={countries} />
     </>
   );
 }

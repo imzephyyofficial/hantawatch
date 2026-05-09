@@ -4,48 +4,72 @@ import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card"
 import { CfrStrainBar } from "@/components/charts/cfr-strain-bar";
 import { RegionBar } from "@/components/charts/region-bar";
 import { TopCountriesBar } from "@/components/charts/top-countries-bar";
-import { regionCfr, regionTotals, strainAggregates, topCountries, totalCases } from "@/lib/metrics";
+import { fetchLive } from "@/lib/sources";
+import { regionCfr, regionTotals, snapshotDate, strainAggregates, topCountries, totalCases } from "@/lib/metrics";
 import { fmtCfr } from "@/lib/format";
 import { AlertCircle, Earth, Microscope } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Analytics",
-  description: "Strain, region, and country-level breakdowns of hantavirus surveillance data.",
+  description: "Strain, region, and country-level breakdowns derived from live data.",
 };
 
-export default function Page() {
-  const strains = strainAggregates();
-  const regions = regionTotals();
-  const top = topCountries(10);
-  const americasCfr = regionCfr("Americas");
-  const europeCfr = regionCfr("Europe");
-  const asiaShare = (regions.find((r) => r.region === "Asia")?.cases ?? 0) / Math.max(totalCases(), 1) * 100;
-  const deadliest = [...strains].sort((a, b) => b.cfr - a.cfr)[0];
+export const revalidate = 21600;
+
+export default async function Page() {
+  const { countries } = await fetchLive();
+  const strainsAgg = strainAggregates(countries).filter((s) => s.cases > 0);
+  const regions = regionTotals(countries).filter((r) => r.cases > 0);
+  const top = topCountries(countries, 10);
+  const americasCfr = regionCfr(countries, "Americas");
+  const europeCfr = regionCfr(countries, "Europe");
+  const asiaTotal = regions.find((r) => r.region === "Asia")?.cases ?? 0;
+  const totalCasesNum = totalCases(countries);
+  const asiaShare = totalCasesNum > 0 ? (asiaTotal / totalCasesNum) * 100 : 0;
+  const deadliest = strainsAgg.length > 0 ? [...strainsAgg].sort((a, b) => b.cfr - a.cfr)[0] : null;
+
+  const haveAnyCases = totalCasesNum > 0;
 
   return (
     <>
-      <Topbar title="Analytics" subtitle="Strain, region, and country-level breakdowns" />
+      <Topbar
+        title="Analytics"
+        subtitle="Strain, region, and country-level breakdowns derived from live data"
+        snapshotDate={snapshotDate(countries)}
+      />
 
-      <Card className="mb-6">
-        <Insight
-          icon={<AlertCircle className="h-5 w-5 text-amber-400" />}
-          title={`Americas CFR is ${(americasCfr / Math.max(europeCfr, 0.01)).toFixed(0)}× higher than Europe`}
-          body={`Americas average ${fmtCfr(americasCfr)} vs. Europe ${fmtCfr(europeCfr)} — driven by Andes and Sin Nombre virus mortality.`}
-        />
-        <Insight
-          icon={<Earth className="h-5 w-5 text-blue-400" />}
-          title={`Asia accounts for ${asiaShare.toFixed(0)}% of global cases`}
-          body="Hantaan and Seoul virus circulation in China dominates the global case count, with most cases recovering."
-        />
-        {deadliest && (
+      {haveAnyCases ? (
+        <Card className="mb-6">
           <Insight
-            icon={<Microscope className="h-5 w-5 text-purple-400" />}
-            title={`${deadliest.name} has the highest CFR — ${fmtCfr(deadliest.cfr)}`}
-            body={`${deadliest.cases.toLocaleString()} cases and ${deadliest.deaths.toLocaleString()} deaths across ${deadliest.countries} countries.`}
-            isLast
+            icon={<AlertCircle className="h-5 w-5 text-amber-400" />}
+            title={
+              europeCfr > 0
+                ? `Americas CFR is ${(americasCfr / Math.max(europeCfr, 0.01)).toFixed(1)}× higher than Europe`
+                : `Americas average CFR is ${fmtCfr(americasCfr)}`
+            }
+            body={`Americas average ${fmtCfr(americasCfr)} vs. Europe ${fmtCfr(europeCfr)} — derived from countries currently in the live set.`}
           />
-        )}
-      </Card>
+          <Insight
+            icon={<Earth className="h-5 w-5 text-blue-400" />}
+            title={`Asia accounts for ${asiaShare.toFixed(0)}% of reported cases in the live set`}
+            body="Aggregated from countries with published case counts. Coverage is intentionally narrow — only what live sources publish."
+          />
+          {deadliest && (
+            <Insight
+              icon={<Microscope className="h-5 w-5 text-purple-400" />}
+              title={`${deadliest.name} has the highest reported CFR — ${fmtCfr(deadliest.cfr)}`}
+              body={`${deadliest.cases.toLocaleString()} cases and ${deadliest.deaths.toLocaleString()} deaths across ${deadliest.countries} countries.`}
+              isLast
+            />
+          )}
+        </Card>
+      ) : (
+        <Card className="mb-6">
+          <p className="text-sm text-[var(--color-fg-muted)] py-4">
+            No country in the current live set has both case and death counts published. Insights will populate when WHO or CDC publishes new figures.
+          </p>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
         <Card>
@@ -55,27 +79,39 @@ export default function Page() {
               <CardSubtitle>Average case fatality rate per strain group</CardSubtitle>
             </div>
           </CardHeader>
-          <CfrStrainBar data={strains} />
+          {strainsAgg.length > 0 ? (
+            <CfrStrainBar data={strainsAgg} />
+          ) : (
+            <div className="text-sm text-[var(--color-fg-muted)] py-12 text-center">No strain-level case data in the live set yet.</div>
+          )}
         </Card>
         <Card>
           <CardHeader>
             <div>
               <CardTitle>Cases by region</CardTitle>
-              <CardSubtitle>Aggregated totals by WHO region</CardSubtitle>
+              <CardSubtitle>Aggregated totals from the live set</CardSubtitle>
             </div>
           </CardHeader>
-          <RegionBar data={regions} />
+          {regions.length > 0 ? (
+            <RegionBar data={regions} />
+          ) : (
+            <div className="text-sm text-[var(--color-fg-muted)] py-12 text-center">No regions with case figures.</div>
+          )}
         </Card>
       </div>
 
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>Top 10 countries by cases</CardTitle>
-            <CardSubtitle>Cumulative reported cases (2025–2026)</CardSubtitle>
+            <CardTitle>Top countries by reported cases</CardTitle>
+            <CardSubtitle>Live ranking — countries without published counts are not shown</CardSubtitle>
           </div>
         </CardHeader>
-        <TopCountriesBar data={top} />
+        {top.length > 0 ? (
+          <TopCountriesBar data={top} />
+        ) : (
+          <div className="text-sm text-[var(--color-fg-muted)] py-12 text-center">No countries in the live set have published case counts.</div>
+        )}
       </Card>
     </>
   );

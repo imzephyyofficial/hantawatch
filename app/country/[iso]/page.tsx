@@ -5,7 +5,8 @@ import { Topbar } from "@/components/layout/topbar";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { AlertFeed } from "@/components/alert-feed";
-import { surveillanceData, outbreakEvents, dataSources } from "@/lib/data";
+import { fetchLive } from "@/lib/sources";
+import { dataSources } from "@/lib/data";
 import { cfr, fmt, fmtCfr, fmtDate } from "@/lib/format";
 import { JsonLd } from "@/components/json-ld";
 import { countrySchema } from "@/lib/jsonld";
@@ -19,21 +20,28 @@ const STATUS_BADGE: Record<Status, BadgeVariant> = {
 
 interface Params { iso: string; }
 
+export const revalidate = 21600;
+export const dynamicParams = true;
+
 export async function generateStaticParams(): Promise<Params[]> {
-  return surveillanceData.map((r) => ({ iso: r.iso }));
+  const { countries } = await fetchLive();
+  return countries.map((r) => ({ iso: r.iso }));
 }
 
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
   const { iso } = await params;
-  const row = surveillanceData.find((r) => r.iso === iso);
+  const { countries } = await fetchLive();
+  const row = countries.find((r) => r.iso === iso);
   if (!row) return { title: "Country not found" };
-  const description = `${row.country} hantavirus surveillance — ${fmt(row.cases)} cases, ${fmt(row.deaths)} deaths, CFR ${fmtCfr(cfr(row.deaths, row.cases))} (${row.strain}).`;
+  const desc = row.cases != null
+    ? `${row.country} hantavirus surveillance — ${fmt(row.cases)} cases (${row.source}).`
+    : `${row.country} listed in current WHO Disease Outbreak News for hantavirus.`;
   return {
     title: row.country,
-    description,
+    description: desc,
     openGraph: {
       title: `${row.flag} ${row.country} · HantaWatch`,
-      description,
+      description: desc,
       images: [{ url: `/api/og/country/${row.iso}`, width: 1200, height: 630 }],
     },
     twitter: { card: "summary_large_image", images: [`/api/og/country/${row.iso}`] },
@@ -43,53 +51,76 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
 
 export default async function Page({ params }: { params: Promise<Params> }) {
   const { iso } = await params;
-  const row = surveillanceData.find((r) => r.iso === iso);
+  const { countries, events } = await fetchLive();
+  const row = countries.find((r) => r.iso === iso);
   if (!row) notFound();
 
-  const pct = cfr(row.deaths, row.cases);
-  const events = outbreakEvents.filter((e) => e.iso === iso);
-  const peers = surveillanceData
+  const pct = row.cases != null && row.deaths != null ? cfr(row.deaths, row.cases) : null;
+  const countryEvents = events.filter((e) => e.iso === iso || e.country === row.country);
+  const peers = countries
     .filter((r) => r.region === row.region && r.iso !== iso)
-    .sort((a, b) => b.cases - a.cases)
     .slice(0, 4);
 
   return (
     <>
       <JsonLd data={countrySchema(row)} />
-      <Topbar title={`${row.flag} ${row.country}`} subtitle={`${row.region} · ${row.strain}`} />
+      <Topbar
+        title={`${row.flag} ${row.country}`}
+        subtitle={`${row.region} · ${row.strain ?? "Strain TBD"}`}
+        snapshotDate={row.lastReport}
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <Stat title="Cases" value={fmt(row.cases)} />
-        <Stat title="Deaths" value={fmt(row.deaths)} />
-        <Stat title="CFR" value={fmtCfr(pct)} accent={pct >= 20 ? "danger" : pct >= 5 ? "warn" : "success"} />
-        <Stat title="Status" value={<Badge variant={STATUS_BADGE[row.status]}>{row.status}</Badge>} />
+        <Stat title="Cases" value={row.cases != null ? fmt(row.cases) : "—"} />
+        <Stat title="Deaths" value={row.deaths != null ? fmt(row.deaths) : "—"} />
+        <Stat title="CFR" value={pct != null ? fmtCfr(pct) : "—"} accent={pct != null ? (pct >= 20 ? "danger" : pct >= 5 ? "warn" : "success") : undefined} />
+        <Stat title="Status" value={row.status ? <Badge variant={STATUS_BADGE[row.status]}>{row.status}</Badge> : "—"} />
       </div>
 
       <Card className="mb-8">
         <CardHeader>
           <div>
             <CardTitle>Profile</CardTitle>
-            <CardSubtitle>Demographics and reporting</CardSubtitle>
+            <CardSubtitle>What we know from {row.source}</CardSubtitle>
           </div>
         </CardHeader>
         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-6 text-sm">
           <Field label="Region" value={row.region} />
-          <Field label="Predominant strain" value={
-            <Link href={`/strain/${row.strain.replace(/ \(imported\)/i, "").toLowerCase().replace(/[ /]/g, "-")}`} className="text-blue-400 hover:text-blue-300">
-              {row.strain}
-            </Link>
-          } />
+          <Field
+            label="Predominant strain"
+            value={
+              row.strain ? (
+                <Link
+                  href={`/strain/${row.strain.replace(/ \(imported\)/i, "").toLowerCase().replace(/[ /]/g, "-")}`}
+                  className="text-blue-400 hover:text-blue-300"
+                >
+                  {row.strain}
+                </Link>
+              ) : (
+                <span className="text-[var(--color-fg-muted)]">Not reported</span>
+              )
+            }
+          />
           <Field label="Last report" value={fmtDate(row.lastReport)} />
           {row.population && <Field label="Population" value={fmt(row.population)} />}
-          <Field label="Cases per million" value={row.population ? fmt(Math.round((row.cases / row.population) * 1_000_000)) : "—"} />
-          <Field label="Deaths per million" value={row.population ? fmt(Math.round((row.deaths / row.population) * 1_000_000)) : "—"} />
+          <Field label="Cases per million" value={row.population && row.cases != null ? fmt(Math.round((row.cases / row.population) * 1_000_000)) : "—"} />
+          <Field label="Deaths per million" value={row.population && row.deaths != null ? fmt(Math.round((row.deaths / row.population) * 1_000_000)) : "—"} />
+          <Field
+            label="Source"
+            value={
+              <a href={row.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">
+                {row.source} ↗
+              </a>
+            }
+          />
+          {row.notes && <Field label="Notes" value={row.notes} />}
         </dl>
       </Card>
 
-      {events.length > 0 && (
+      {countryEvents.length > 0 && (
         <section className="mb-8">
-          <h2 className="text-lg font-bold tracking-tight mb-4">Recent events in {row.country}</h2>
-          <AlertFeed events={events} />
+          <h2 className="text-lg font-bold tracking-tight mb-4">WHO entries mentioning {row.country}</h2>
+          <AlertFeed events={countryEvents} />
         </section>
       )}
 
@@ -107,12 +138,11 @@ export default async function Page({ params }: { params: Promise<Params> }) {
                   <span className="text-xl">{p.flag}</span>
                   <div>
                     <div className="font-semibold text-sm">{p.country}</div>
-                    <div className="text-xs text-[var(--color-fg-muted)]">{p.strain}</div>
+                    <div className="text-xs text-[var(--color-fg-muted)]">{p.strain ?? "Strain TBD"}</div>
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="font-mono text-sm font-semibold">{fmt(p.cases)} cases</div>
-                  <div className="text-xs text-[var(--color-fg-muted)]">CFR {fmtCfr(cfr(p.deaths, p.cases))}</div>
+                  <div className="font-mono text-sm font-semibold">{p.cases != null ? `${fmt(p.cases)} cases` : "—"}</div>
                 </div>
               </Link>
             ))}
@@ -123,8 +153,8 @@ export default async function Page({ params }: { params: Promise<Params> }) {
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>Source documents</CardTitle>
-            <CardSubtitle>Verify against original publishers</CardSubtitle>
+            <CardTitle>Verify against publishers</CardTitle>
+            <CardSubtitle>This row's source is {row.source}; here's where to cross-check</CardSubtitle>
           </div>
         </CardHeader>
         <ul className="space-y-2 text-sm">

@@ -4,7 +4,8 @@ import Link from "next/link";
 import { Topbar } from "@/components/layout/topbar";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { strains, surveillanceData } from "@/lib/data";
+import { strains } from "@/lib/data";
+import { fetchLive } from "@/lib/sources";
 import { cfr, fmt, fmtCfr } from "@/lib/format";
 import { JsonLd } from "@/components/json-ld";
 import { strainSchema } from "@/lib/jsonld";
@@ -12,6 +13,8 @@ import { strainSchema } from "@/lib/jsonld";
 interface Params { name: string; }
 
 const slug = (s: string) => s.toLowerCase().replace(/[ /]/g, "-");
+
+export const revalidate = 21600;
 
 export async function generateStaticParams(): Promise<Params[]> {
   return strains.map((s) => ({ name: slug(s.name) }));
@@ -40,23 +43,28 @@ export default async function Page({ params }: { params: Promise<Params> }) {
   const s = strains.find((x) => slug(x.name) === name);
   if (!s) notFound();
 
-  const reportingCountries = surveillanceData.filter((r) =>
-    r.strain.toLowerCase().includes(s.name.toLowerCase())
+  const { countries } = await fetchLive();
+  const reportingCountries = countries.filter((r) =>
+    (r.strain ?? "").toLowerCase().includes(s.name.toLowerCase())
   );
-  const totalCases = reportingCountries.reduce((sum, r) => sum + r.cases, 0);
-  const totalDeaths = reportingCountries.reduce((sum, r) => sum + r.deaths, 0);
+  const totalCases = reportingCountries.reduce((sum, r) => sum + (r.cases ?? 0), 0);
+  const totalDeaths = reportingCountries.reduce((sum, r) => sum + (r.deaths ?? 0), 0);
   const observedCfr = totalCases > 0 ? cfr(totalDeaths, totalCases) : 0;
 
   return (
     <>
       <JsonLd data={strainSchema(s)} />
-      <Topbar title={`${s.name} virus`} subtitle={`${s.family} · causes ${s.syndrome}`} />
+      <Topbar
+        title={`${s.name} virus`}
+        subtitle={`${s.family} · causes ${s.syndrome}`}
+        freshness="virology reference"
+      />
 
       <Card className="mb-8">
         <CardHeader>
           <div>
             <CardTitle>Overview</CardTitle>
-            <CardSubtitle>Virology and natural history</CardSubtitle>
+            <CardSubtitle>Reference virology — does not change with surveillance data</CardSubtitle>
           </div>
           <Badge variant={s.syndrome === "HCPS" ? "outbreak" : "brand"}>{s.syndrome}</Badge>
         </CardHeader>
@@ -83,12 +91,14 @@ export default async function Page({ params }: { params: Promise<Params> }) {
         <Card className="mb-8">
           <CardHeader>
             <div>
-              <CardTitle>Current reporting</CardTitle>
-              <CardSubtitle>Countries reporting {s.name} cases in the snapshot</CardSubtitle>
+              <CardTitle>Live reporting</CardTitle>
+              <CardSubtitle>Countries currently flagged with {s.name} virus in the live feed</CardSubtitle>
             </div>
             <div className="text-right text-sm">
-              <div className="font-mono font-semibold">{fmt(totalCases)} cases</div>
-              <div className="text-[var(--color-fg-muted)] text-xs">CFR {fmtCfr(observedCfr)} observed</div>
+              <div className="font-mono font-semibold">{totalCases > 0 ? `${fmt(totalCases)} cases` : "—"}</div>
+              <div className="text-[var(--color-fg-muted)] text-xs">
+                {totalCases > 0 ? `CFR ${fmtCfr(observedCfr)} observed` : "no published case counts"}
+              </div>
             </div>
           </CardHeader>
           <div className="space-y-2">
@@ -102,12 +112,12 @@ export default async function Page({ params }: { params: Promise<Params> }) {
                   <span className="text-xl">{r.flag}</span>
                   <div>
                     <div className="font-semibold text-sm">{r.country}</div>
-                    <div className="text-xs text-[var(--color-fg-muted)]">{r.region} · {r.strain}</div>
+                    <div className="text-xs text-[var(--color-fg-muted)]">{r.region} · {r.source}</div>
                   </div>
                 </div>
                 <div className="text-right text-sm">
-                  <div className="font-mono">{fmt(r.cases)} cases</div>
-                  <div className="text-xs text-[var(--color-fg-muted)]">{fmt(r.deaths)} deaths</div>
+                  <div className="font-mono">{r.cases != null ? `${fmt(r.cases)} cases` : "—"}</div>
+                  <div className="text-xs text-[var(--color-fg-muted)]">{r.deaths != null ? `${fmt(r.deaths)} deaths` : "—"}</div>
                 </div>
               </Link>
             ))}

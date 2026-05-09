@@ -1,12 +1,13 @@
 import { ImageResponse } from "next/og";
-import { outbreakEvents } from "@/lib/data";
+import { fetchLive } from "@/lib/sources";
 import { fmtDate } from "@/lib/format";
 
 export const runtime = "edge";
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
-  const ev = outbreakEvents.find((e) => e.id === id);
+  const { events } = await fetchLive();
+  const ev = events.find((e) => e.id === id);
   if (!ev) return new ImageResponse(<div style={{ display: "flex" }}>Not found</div>, { width: 1200, height: 630 });
   const sevColor = ev.severity === "high" ? "#ef4444" : ev.severity === "medium" ? "#f59e0b" : "#3b82f6";
 
@@ -54,7 +55,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
         </div>
 
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: "auto", fontSize: 16, color: "#9ca3af" }}>
-          <span>HantaWatch · Outbreak alert</span>
+          <span>HantaWatch · WHO Disease Outbreak News</span>
           <span>{ev.country}</span>
         </div>
       </div>

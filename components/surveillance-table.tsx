@@ -3,13 +3,14 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Search } from "lucide-react";
-import type { SurveillanceRecord, Status } from "@/lib/types";
+import type { CountrySnapshot } from "@/lib/sources";
+import type { Status } from "@/lib/types";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cfr, cfrTier, fmt, fmtCfr, fmtDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-type SortKey = "country" | "region" | "cases" | "deaths" | "cfr" | "strain" | "lastReport" | "status";
+type SortKey = "country" | "region" | "cases" | "deaths" | "cfr" | "strain" | "lastReport" | "status" | "source";
 type SortDir = "asc" | "desc";
 type StatusFilter = Status | "all";
 
@@ -20,7 +21,7 @@ const STATUS_BADGE: Record<Status, BadgeVariant> = {
 };
 
 interface Props {
-  data: SurveillanceRecord[];
+  data: CountrySnapshot[];
 }
 
 export function SurveillanceTable({ data }: Props) {
@@ -36,17 +37,26 @@ export function SurveillanceTable({ data }: Props) {
       r = r.filter(
         (x) =>
           x.country.toLowerCase().includes(q) ||
-          x.strain.toLowerCase().includes(q) ||
+          (x.strain ?? "").toLowerCase().includes(q) ||
           x.region.toLowerCase().includes(q) ||
-          x.status.toLowerCase().includes(q)
+          (x.status ?? "").toLowerCase().includes(q) ||
+          x.source.toLowerCase().includes(q)
       );
     }
     const mul = sort.dir === "asc" ? 1 : -1;
+    const valueOf = (row: CountrySnapshot, key: SortKey): string | number | null => {
+      if (key === "cfr") {
+        return row.cases != null && row.deaths != null ? cfr(row.deaths, row.cases) : -1;
+      }
+      const v = row[key as keyof CountrySnapshot];
+      if (typeof v === "string" || typeof v === "number") return v;
+      return v == null ? null : String(v);
+    };
     r.sort((a, b) => {
-      const av = sort.key === "cfr" ? cfr(a.deaths, a.cases) : (a[sort.key] as string | number);
-      const bv = sort.key === "cfr" ? cfr(b.deaths, b.cases) : (b[sort.key] as string | number);
+      const av = valueOf(a, sort.key);
+      const bv = valueOf(b, sort.key);
       if (typeof av === "number" && typeof bv === "number") return (av - bv) * mul;
-      return String(av).localeCompare(String(bv)) * mul;
+      return String(av ?? "").localeCompare(String(bv ?? "")) * mul;
     });
     return r;
   }, [data, search, status, sort]);
@@ -54,24 +64,34 @@ export function SurveillanceTable({ data }: Props) {
   const toggle = (key: SortKey) => {
     setSort((s) => {
       if (s.key === key) return { key, dir: s.dir === "asc" ? "desc" : "asc" };
-      return { key, dir: ["country", "region", "strain", "lastReport", "status"].includes(key) ? "asc" : "desc" };
+      return { key, dir: ["country", "region", "strain", "lastReport", "status", "source"].includes(key) ? "asc" : "desc" };
     });
   };
 
   const exportData = (format: "csv" | "json") => {
     if (format === "json") {
       const blob = new Blob(
-        [JSON.stringify(rows.map((r) => ({ ...r, cfrPct: +cfr(r.deaths, r.cases).toFixed(2) })), null, 2)],
+        [JSON.stringify(rows, null, 2)],
         { type: "application/json" }
       );
       downloadBlob(blob, "hantawatch-surveillance.json");
       return;
     }
-    const cols = ["Country", "Region", "Cases", "Deaths", "CFR (%)", "Strain", "Last Report", "Status"];
+    const cols = ["Country", "Region", "Cases", "Deaths", "CFR (%)", "Strain", "Last Report", "Status", "Source"];
     const csv = [
       cols.join(","),
       ...rows.map((r) =>
-        [r.country, r.region, r.cases, r.deaths, cfr(r.deaths, r.cases).toFixed(2), r.strain, r.lastReport, r.status]
+        [
+          r.country,
+          r.region,
+          r.cases ?? "",
+          r.deaths ?? "",
+          r.cases != null && r.deaths != null ? cfr(r.deaths, r.cases).toFixed(2) : "",
+          r.strain ?? "",
+          r.lastReport,
+          r.status ?? "",
+          r.source,
+        ]
           .map((v) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v))
           .join(",")
       ),
@@ -88,6 +108,7 @@ export function SurveillanceTable({ data }: Props) {
     { key: "strain", label: "Strain" },
     { key: "lastReport", label: "Last report" },
     { key: "status", label: "Status" },
+    { key: "source", label: "Source" },
   ];
 
   return (
@@ -99,7 +120,7 @@ export function SurveillanceTable({ data }: Props) {
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search country, strain, region…"
+            placeholder="Search country, strain, source…"
             aria-label="Search surveillance"
             className="w-full pl-10 pr-3 py-2 rounded-lg bg-[var(--color-bg-input)] border border-[var(--color-border)] text-sm focus:outline-none focus:border-blue-500"
           />
@@ -150,15 +171,15 @@ export function SurveillanceTable({ data }: Props) {
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-12 text-[var(--color-fg-muted)]">
+                  <td colSpan={9} className="text-center py-12 text-[var(--color-fg-muted)]">
                     <div className="text-2xl mb-2 opacity-60">🔎</div>
-                    No matches for the current filters.
+                    No live data matches the current filters.
                   </td>
                 </tr>
               ) : (
                 rows.map((r) => {
-                  const pct = cfr(r.deaths, r.cases);
-                  const tier = cfrTier(pct);
+                  const pct = r.cases != null && r.deaths != null ? cfr(r.deaths, r.cases) : null;
+                  const tier = pct != null ? cfrTier(pct) : null;
                   return (
                     <tr key={r.iso} className="border-b border-[var(--color-border-soft)] hover:bg-[var(--color-bg-hover)] last:border-b-0">
                       <td className="px-4 py-3.5">
@@ -167,8 +188,8 @@ export function SurveillanceTable({ data }: Props) {
                         </Link>
                       </td>
                       <td className="px-4 py-3.5 text-[var(--color-fg-secondary)]">{r.region}</td>
-                      <td className="px-4 py-3.5 font-mono tabular-nums">{fmt(r.cases)}</td>
-                      <td className="px-4 py-3.5 font-mono tabular-nums">{fmt(r.deaths)}</td>
+                      <td className="px-4 py-3.5 font-mono tabular-nums">{r.cases != null ? fmt(r.cases) : "—"}</td>
+                      <td className="px-4 py-3.5 font-mono tabular-nums">{r.deaths != null ? fmt(r.deaths) : "—"}</td>
                       <td
                         className={cn(
                           "px-4 py-3.5 font-mono tabular-nums font-semibold",
@@ -177,16 +198,29 @@ export function SurveillanceTable({ data }: Props) {
                           tier === "low" && "text-emerald-400"
                         )}
                       >
-                        {fmtCfr(pct)}
+                        {pct != null ? fmtCfr(pct) : "—"}
                       </td>
                       <td className="px-4 py-3.5">
-                        <Link href={`/strain/${r.strain.replace(/ \(imported\)/i, "").toLowerCase().replace(/[ /]/g, "-")}`} className="hover:text-blue-400">
-                          {r.strain}
-                        </Link>
+                        {r.strain ? (
+                          <Link href={`/strain/${r.strain.replace(/ \(imported\)/i, "").toLowerCase().replace(/[ /]/g, "-")}`} className="hover:text-blue-400">
+                            {r.strain}
+                          </Link>
+                        ) : (
+                          <span className="text-[var(--color-fg-muted)]">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3.5 text-[var(--color-fg-secondary)]">{fmtDate(r.lastReport)}</td>
                       <td className="px-4 py-3.5">
-                        <Badge variant={STATUS_BADGE[r.status]}>{r.status}</Badge>
+                        {r.status ? (
+                          <Badge variant={STATUS_BADGE[r.status]}>{r.status}</Badge>
+                        ) : (
+                          <span className="text-[var(--color-fg-muted)]">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5 text-xs text-[var(--color-fg-muted)]">
+                        <a href={r.sourceUrl} target="_blank" rel="noopener noreferrer" className="hover:text-blue-400">
+                          {r.source} ↗
+                        </a>
                       </td>
                     </tr>
                   );
@@ -198,7 +232,7 @@ export function SurveillanceTable({ data }: Props) {
       </div>
 
       <p className="mt-3 text-xs text-[var(--color-fg-muted)]">
-        Showing {rows.length} of {data.length} countries · sorted by {sort.key} {sort.dir}
+        Showing {rows.length} of {data.length} countries · sorted by {sort.key} {sort.dir} · pulled live from WHO + CDC
       </p>
     </div>
   );

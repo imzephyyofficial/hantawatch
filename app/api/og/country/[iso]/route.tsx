@@ -1,5 +1,5 @@
 import { ImageResponse } from "next/og";
-import { surveillanceData } from "@/lib/data";
+import { fetchLive } from "@/lib/sources";
 import { cfr, fmt, fmtCfr } from "@/lib/format";
 import { riskScore } from "@/lib/risk";
 
@@ -7,12 +7,13 @@ export const runtime = "edge";
 
 export async function GET(_req: Request, ctx: { params: Promise<{ iso: string }> }) {
   const { iso } = await ctx.params;
-  const r = surveillanceData.find((x) => x.iso === iso);
+  const { countries } = await fetchLive();
+  const r = countries.find((x) => x.iso === iso);
   if (!r) {
     return new ImageResponse(<div style={{ display: "flex" }}>Not found</div>, { width: 1200, height: 630 });
   }
-  const pct = cfr(r.deaths, r.cases);
-  const risk = riskScore(r);
+  const pct = r.cases != null && r.deaths != null ? cfr(r.deaths, r.cases) : null;
+  const risk = riskScore(countries, r);
   const accent = r.status === "outbreak" ? "#ef4444" : r.status === "active" ? "#3b82f6" : "#a855f7";
 
   return new ImageResponse(
@@ -34,36 +35,38 @@ export async function GET(_req: Request, ctx: { params: Promise<{ iso: string }>
           <div style={{ display: "flex", flexDirection: "column" }}>
             <div style={{ fontSize: 56, fontWeight: 800 }}>{r.country}</div>
             <div style={{ fontSize: 20, color: "#9ca3af" }}>
-              {r.region} · {r.strain}
+              {r.region} · {r.strain ?? "Strain TBD"}
             </div>
           </div>
-          <div
-            style={{
-              marginLeft: "auto",
-              padding: "10px 20px",
-              borderRadius: 999,
-              background: `${accent}26`,
-              color: accent,
-              fontSize: 20,
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: 2,
-              border: `2px solid ${accent}`,
-            }}
-          >
-            {r.status}
-          </div>
+          {r.status && (
+            <div
+              style={{
+                marginLeft: "auto",
+                padding: "10px 20px",
+                borderRadius: 999,
+                background: `${accent}26`,
+                color: accent,
+                fontSize: 20,
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: 2,
+                border: `2px solid ${accent}`,
+              }}
+            >
+              {r.status}
+            </div>
+          )}
         </div>
 
         <div style={{ display: "flex", gap: 16, marginBottom: 32 }}>
-          <Cell label="Cases" value={fmt(r.cases)} color="#f9fafb" />
-          <Cell label="Deaths" value={fmt(r.deaths)} color="#a855f7" />
-          <Cell label="CFR" value={fmtCfr(pct)} color={pct >= 20 ? "#ef4444" : pct >= 5 ? "#f59e0b" : "#22c55e"} />
+          <Cell label="Cases" value={r.cases != null ? fmt(r.cases) : "—"} color="#f9fafb" />
+          <Cell label="Deaths" value={r.deaths != null ? fmt(r.deaths) : "—"} color="#a855f7" />
+          <Cell label="CFR" value={pct != null ? fmtCfr(pct) : "—"} color={pct != null && pct >= 20 ? "#ef4444" : pct != null && pct >= 5 ? "#f59e0b" : "#22c55e"} />
           <Cell label="Risk score" value={String(risk.score)} color="#3b82f6" />
         </div>
 
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: "auto", fontSize: 18, color: "#9ca3af" }}>
-          <span>HantaWatch · Global Surveillance</span>
+          <span>Source · {r.source}</span>
           <span>hantawatch-global.vercel.app/country/{r.iso}</span>
         </div>
       </div>

@@ -1,4 +1,5 @@
-import type { OutbreakEvent, StrainInfo, SurveillanceRecord } from "./types";
+import type { OutbreakEvent, StrainInfo } from "./types";
+import type { CountrySnapshot } from "./sources";
 import { cfr } from "./format";
 
 const BASE = "https://hantawatch-global.vercel.app";
@@ -17,10 +18,10 @@ export function datasetSchema() {
   return {
     "@context": "https://schema.org",
     "@type": "Dataset",
-    name: "HantaWatch Country Surveillance",
-    description: "Country-level hantavirus surveillance: cumulative cases, deaths, CFR, predominant strain, and reporting status.",
+    name: "HantaWatch Live Hantavirus Surveillance",
+    description: "Live hantavirus surveillance pulled from WHO Disease Outbreak News and CDC. Country reporting, outbreak events, and strain reference.",
     url: `${BASE}/surveillance`,
-    keywords: ["hantavirus", "surveillance", "epidemiology", "HCPS", "HFRS"],
+    keywords: ["hantavirus", "surveillance", "epidemiology", "HCPS", "HFRS", "WHO", "CDC"],
     license: "https://opensource.org/licenses/MIT",
     creator: { "@type": "Organization", name: "HantaWatch" },
     distribution: [
@@ -30,20 +31,22 @@ export function datasetSchema() {
   };
 }
 
-export function countrySchema(r: SurveillanceRecord) {
-  const pct = cfr(r.deaths, r.cases);
+export function countrySchema(r: CountrySnapshot) {
+  const props: Array<{ "@type": "PropertyValue"; name: string; value: unknown; unitText?: string }> = [];
+  if (r.cases != null) props.push({ "@type": "PropertyValue", name: "cases", value: r.cases });
+  if (r.deaths != null) props.push({ "@type": "PropertyValue", name: "deaths", value: r.deaths });
+  if (r.cases != null && r.deaths != null)
+    props.push({ "@type": "PropertyValue", name: "case_fatality_rate", value: +cfr(r.deaths, r.cases).toFixed(2), unitText: "percent" });
+  if (r.strain) props.push({ "@type": "PropertyValue", name: "predominant_strain", value: r.strain });
+  if (r.status) props.push({ "@type": "PropertyValue", name: "status", value: r.status });
+  props.push({ "@type": "PropertyValue", name: "last_report", value: r.lastReport });
+  props.push({ "@type": "PropertyValue", name: "source", value: r.source });
+
   return {
     "@context": "https://schema.org",
     "@type": "Place",
     name: r.country,
-    additionalProperty: [
-      { "@type": "PropertyValue", name: "cases", value: r.cases },
-      { "@type": "PropertyValue", name: "deaths", value: r.deaths },
-      { "@type": "PropertyValue", name: "case_fatality_rate", value: +pct.toFixed(2), unitText: "percent" },
-      { "@type": "PropertyValue", name: "predominant_strain", value: r.strain },
-      { "@type": "PropertyValue", name: "status", value: r.status },
-      { "@type": "PropertyValue", name: "last_report", value: r.lastReport },
-    ],
+    additionalProperty: props,
   };
 }
 

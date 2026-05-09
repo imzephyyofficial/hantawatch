@@ -1,14 +1,16 @@
 import { ImageResponse } from "next/og";
-import { totalCases, totalDeaths, outbreaks, overallCfr, snapshotDate } from "@/lib/metrics";
+import { fetchLive } from "@/lib/sources";
+import { outbreakRows, overallCfr, snapshotDate, totalCases, totalDeaths } from "@/lib/metrics";
 import { fmt, fmtCfr } from "@/lib/format";
 
 export const runtime = "edge";
 
 export async function GET() {
-  const cases = totalCases();
-  const deaths = totalDeaths();
-  const ob = outbreaks().length;
-  const cfrPct = overallCfr();
+  const { countries, events } = await fetchLive();
+  const cases = totalCases(countries);
+  const deaths = totalDeaths(countries);
+  const ob = outbreakRows(countries).length;
+  const cfrPct = overallCfr(countries);
 
   return new ImageResponse(
     (
@@ -29,20 +31,20 @@ export async function GET() {
           <div style={{ display: "flex", flexDirection: "column" }}>
             <div style={{ fontSize: 36, fontWeight: 800 }}>HantaWatch</div>
             <div style={{ fontSize: 18, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 2 }}>
-              Global Hantavirus Surveillance
+              Live · WHO + CDC
             </div>
           </div>
         </div>
 
         <div style={{ display: "flex", gap: 24, flex: 1, alignItems: "center" }}>
-          <Cell label="Cases" value={fmt(cases)} color="#ef4444" />
-          <Cell label="Outbreaks" value={String(ob)} color="#f59e0b" />
-          <Cell label="Deaths" value={fmt(deaths)} color="#a855f7" />
-          <Cell label="CFR" value={fmtCfr(cfrPct)} color="#3b82f6" />
+          <Cell label="Cases" value={cases > 0 ? fmt(cases) : "—"} color="#ef4444" />
+          <Cell label="WHO alerts" value={String(events.length)} color="#f59e0b" />
+          <Cell label="Flagged" value={String(ob)} color="#a855f7" />
+          <Cell label="CFR" value={cfrPct > 0 ? fmtCfr(cfrPct) : "—"} color="#3b82f6" />
         </div>
 
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 40, fontSize: 18, color: "#9ca3af" }}>
-          <span>Snapshot · {snapshotDate()}</span>
+          <span>Snapshot · {snapshotDate(countries)}</span>
           <span>hantawatch-global.vercel.app</span>
         </div>
       </div>

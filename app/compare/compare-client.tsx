@@ -9,7 +9,8 @@ import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cfr, fmt, fmtCfr, fmtDate } from "@/lib/format";
 import { riskScore } from "@/lib/risk";
-import type { SurveillanceRecord, Status } from "@/lib/types";
+import type { CountrySnapshot } from "@/lib/sources";
+import type { Status } from "@/lib/types";
 
 const STATUS_BADGE: Record<Status, BadgeVariant> = {
   active: "active",
@@ -19,16 +20,17 @@ const STATUS_BADGE: Record<Status, BadgeVariant> = {
 
 interface Props {
   initial: string[];
-  all: SurveillanceRecord[];
+  all: CountrySnapshot[];
 }
 
 export function CompareClient({ initial, all }: Props) {
   const router = useRouter();
   const search = useSearchParams();
-  const [selected, setSelected] = useState<string[]>(initial.length > 0 ? initial : ["us", "ar", "fi"]);
+  const fallback = all.slice(0, 3).map((c) => c.iso);
+  const [selected, setSelected] = useState<string[]>(initial.length > 0 ? initial : fallback);
 
   const rows = useMemo(
-    () => selected.map((iso) => all.find((r) => r.iso === iso)).filter(Boolean) as SurveillanceRecord[],
+    () => selected.map((iso) => all.find((r) => r.iso === iso)).filter(Boolean) as CountrySnapshot[],
     [selected, all]
   );
 
@@ -45,10 +47,18 @@ export function CompareClient({ initial, all }: Props) {
     updateUrl(next);
   };
 
+  if (all.length === 0) {
+    return (
+      <Card>
+        <p className="text-center py-12 text-[var(--color-fg-muted)]">No countries in the live set yet.</p>
+      </Card>
+    );
+  }
+
   return (
     <>
       <Card className="mb-6">
-        <p className="text-sm text-[var(--color-fg-muted)] mb-3">Tap up to 4 countries:</p>
+        <p className="text-sm text-[var(--color-fg-muted)] mb-3">Tap up to 4 countries from the live set:</p>
         <div className="flex flex-wrap gap-1.5">
           {all.map((r) => (
             <button
@@ -77,8 +87,8 @@ export function CompareClient({ initial, all }: Props) {
           style={{ gridTemplateColumns: `repeat(${rows.length}, minmax(0, 1fr))` }}
         >
           {rows.map((r) => {
-            const pct = cfr(r.deaths, r.cases);
-            const risk = riskScore(r);
+            const pct = r.cases != null && r.deaths != null ? cfr(r.deaths, r.cases) : null;
+            const risk = riskScore(all, r);
             return (
               <Card key={r.iso} className="relative">
                 <button
@@ -94,17 +104,17 @@ export function CompareClient({ initial, all }: Props) {
                 <h3 className="text-lg font-bold mb-1">{r.country}</h3>
                 <p className="text-xs text-[var(--color-fg-muted)] mb-4">{r.region}</p>
 
-                <KV label="Cases" value={fmt(r.cases)} mono />
-                <KV label="Deaths" value={fmt(r.deaths)} mono />
+                <KV label="Cases" value={r.cases != null ? fmt(r.cases) : "—"} mono />
+                <KV label="Deaths" value={r.deaths != null ? fmt(r.deaths) : "—"} mono />
                 <KV
                   label="CFR"
-                  value={fmtCfr(pct)}
+                  value={pct != null ? fmtCfr(pct) : "—"}
                   mono
-                  accent={pct >= 20 ? "danger" : pct >= 5 ? "warn" : "success"}
+                  accent={pct != null ? (pct >= 20 ? "danger" : pct >= 5 ? "warn" : "success") : undefined}
                 />
-                <KV label="Strain" value={r.strain} />
+                <KV label="Strain" value={r.strain ?? "—"} />
                 <KV label="Last report" value={fmtDate(r.lastReport)} />
-                <KV label="Status" value={<Badge variant={STATUS_BADGE[r.status]}>{r.status}</Badge>} />
+                <KV label="Status" value={r.status ? <Badge variant={STATUS_BADGE[r.status]}>{r.status}</Badge> : "—"} />
                 <KV
                   label="Risk score"
                   value={
@@ -113,6 +123,7 @@ export function CompareClient({ initial, all }: Props) {
                     </span>
                   }
                 />
+                <KV label="Source" value={<a href={r.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 text-xs">{r.source} ↗</a>} />
 
                 <Link
                   href={`/country/${r.iso}`}

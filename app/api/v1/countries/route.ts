@@ -1,15 +1,28 @@
 import { NextResponse } from "next/server";
-import { surveillanceData } from "@/lib/data";
+import { fetchLive } from "@/lib/sources";
 import { cfr } from "@/lib/format";
 
-export const revalidate = 3600;
+export const revalidate = 21600;
 
-function toCsv() {
-  const cols = ["iso", "country", "region", "cases", "deaths", "cfr_pct", "strain", "last_report", "status", "population"];
+function toCsv(rows: Awaited<ReturnType<typeof fetchLive>>["countries"]) {
+  const cols = ["iso", "country", "region", "cases", "deaths", "cfr_pct", "strain", "last_report", "status", "population", "source", "source_url"];
   const lines = [cols.join(",")];
-  for (const r of surveillanceData) {
+  for (const r of rows) {
     lines.push(
-      [r.iso, r.country, r.region, r.cases, r.deaths, cfr(r.deaths, r.cases).toFixed(2), r.strain, r.lastReport, r.status, r.population ?? ""]
+      [
+        r.iso,
+        r.country,
+        r.region,
+        r.cases ?? "",
+        r.deaths ?? "",
+        r.cases != null && r.deaths != null ? cfr(r.deaths, r.cases).toFixed(2) : "",
+        r.strain ?? "",
+        r.lastReport,
+        r.status ?? "",
+        r.population ?? "",
+        r.source,
+        r.sourceUrl,
+      ]
         .map((v) => {
           const s = String(v ?? "");
           return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -26,25 +39,30 @@ export async function GET(req: Request) {
   const region = url.searchParams.get("region");
   const status = url.searchParams.get("status");
 
-  let rows = surveillanceData;
+  const { countries, fetchedAt, sources } = await fetchLive();
+  let rows = countries;
   if (region) rows = rows.filter((r) => r.region.toLowerCase() === region.toLowerCase());
   if (status) rows = rows.filter((r) => r.status === status);
 
   if (format === "csv") {
-    return new NextResponse(toCsv(), {
+    return new NextResponse(toCsv(rows), {
       headers: {
         "content-type": "text/csv; charset=utf-8",
-        "cache-control": "public, s-maxage=3600, stale-while-revalidate=86400",
+        "cache-control": "public, s-maxage=21600, stale-while-revalidate=86400",
       },
     });
   }
 
-  const data = rows.map((r) => ({ ...r, cfr_pct: +cfr(r.deaths, r.cases).toFixed(2) }));
+  const data = rows.map((r) => ({
+    ...r,
+    cfr_pct: r.cases != null && r.deaths != null ? +cfr(r.deaths, r.cases).toFixed(2) : null,
+  }));
+
   return NextResponse.json(
-    { count: data.length, data },
+    { count: data.length, fetched_at: fetchedAt, sources, data },
     {
       headers: {
-        "cache-control": "public, s-maxage=3600, stale-while-revalidate=86400",
+        "cache-control": "public, s-maxage=21600, stale-while-revalidate=86400",
         "access-control-allow-origin": "*",
       },
     }

@@ -15,12 +15,11 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { outbreaks } from "@/lib/metrics";
 
 const NAV = [
   { href: "/", label: "Dashboard", Icon: LayoutDashboard, match: ["/", "/dashboard"] },
   { href: "/surveillance", label: "Surveillance", Icon: Search, match: ["/surveillance"] },
-  { href: "/outbreaks", label: "Outbreaks", Icon: Siren, match: ["/outbreaks"], badge: true },
+  { href: "/outbreaks", label: "Outbreaks", Icon: Siren, match: ["/outbreaks"] },
   { href: "/risk", label: "Risk index", Icon: ShieldAlert, match: ["/risk"] },
   { href: "/compare", label: "Compare", Icon: GitCompare, match: ["/compare"] },
   { href: "/analytics", label: "Analytics", Icon: BarChart3, match: ["/analytics"] },
@@ -30,7 +29,6 @@ const NAV = [
 export function Sidebar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const outbreakCount = outbreaks().length;
 
   const isActive = (matches: string[]) =>
     matches.some((m) => (m === "/" ? pathname === "/" : pathname.startsWith(m)));
@@ -81,7 +79,7 @@ export function Sidebar() {
         </div>
 
         <nav className="flex-1 px-3 pt-6 flex flex-col gap-0.5" aria-label="Primary">
-          {NAV.map(({ href, label, Icon, match, badge }) => {
+          {NAV.map(({ href, label, Icon, match }) => {
             const active = isActive(match);
             return (
               <Link
@@ -98,16 +96,6 @@ export function Sidebar() {
               >
                 <Icon className="h-4 w-4" />
                 <span>{label}</span>
-                {badge && outbreakCount > 0 && (
-                  <span
-                    className={cn(
-                      "ml-auto px-2 rounded-full text-[10px] font-bold min-w-[20px] text-center",
-                      active ? "bg-white/25" : "bg-red-500 text-white"
-                    )}
-                  >
-                    {outbreakCount}
-                  </span>
-                )}
               </Link>
             );
           })}

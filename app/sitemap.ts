@@ -1,10 +1,13 @@
 import type { MetadataRoute } from "next";
-import { surveillanceData, outbreakEvents, strains } from "@/lib/data";
+import { strains } from "@/lib/data";
+import { fetchLive } from "@/lib/sources";
 
 const BASE = "https://hantawatch-global.vercel.app";
 const slug = (s: string) => s.toLowerCase().replace(/[ /]/g, "-");
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export const revalidate = 21600;
+
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
   const main = ["", "/surveillance", "/outbreaks", "/risk", "/compare", "/analytics", "/reports", "/status"].map((p) => ({
     url: `${BASE}${p}`,
@@ -12,23 +15,27 @@ export default function sitemap(): MetadataRoute.Sitemap {
     changeFrequency: "daily" as const,
     priority: p === "" ? 1.0 : 0.8,
   }));
-  const countries = surveillanceData.map((r) => ({
+
+  const { countries, events } = await fetchLive();
+
+  const countryEntries = countries.map((r) => ({
     url: `${BASE}/country/${r.iso}`,
     lastModified: new Date(r.lastReport),
+    changeFrequency: "daily" as const,
+    priority: 0.7,
+  }));
+  const eventEntries = events.map((e) => ({
+    url: `${BASE}/outbreaks/${e.id}`,
+    lastModified: new Date(e.date),
     changeFrequency: "weekly" as const,
     priority: 0.7,
   }));
-  const events = outbreakEvents.map((e) => ({
-    url: `${BASE}/outbreaks/${e.id}`,
-    lastModified: new Date(e.date),
-    changeFrequency: "monthly" as const,
-    priority: 0.6,
-  }));
-  const strainPages = strains.map((s) => ({
+  const strainEntries = strains.map((s) => ({
     url: `${BASE}/strain/${slug(s.name)}`,
     lastModified: now,
     changeFrequency: "monthly" as const,
     priority: 0.5,
   }));
-  return [...main, ...countries, ...events, ...strainPages];
+
+  return [...main, ...countryEntries, ...eventEntries, ...strainEntries];
 }
