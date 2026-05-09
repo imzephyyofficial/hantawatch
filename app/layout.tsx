@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { ThemeProvider } from "@/components/layout/theme-provider";
@@ -49,22 +50,24 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" data-theme="dark" suppressHydrationWarning className={`${inter.variable} ${jetbrains.variable}`}>
-      <body>
-        <JsonLd data={[organizationSchema(), datasetSchema()]} />
-        <ThemeProvider />
-        <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:bg-blue-500 focus:text-white focus:px-4 focus:py-3 focus:z-50">
-          Skip to main content
-        </a>
-        <div className="grid lg:grid-cols-[72px_1fr] xl:grid-cols-[260px_1fr] min-h-screen">
-          <Sidebar />
-          <main id="main" className="px-4 lg:px-6 xl:px-8 py-6 lg:py-8 overflow-y-auto min-w-0">
-            {children}
-          </main>
-        </div>
-        <Analytics />
-        <SpeedInsights />
-      </body>
-    </html>
+    <ClerkProvider>
+      <html lang="en" data-theme="dark" suppressHydrationWarning className={`${inter.variable} ${jetbrains.variable}`}>
+        <body>
+          <JsonLd data={[organizationSchema(), datasetSchema()]} />
+          <ThemeProvider />
+          <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:bg-blue-500 focus:text-white focus:px-4 focus:py-3 focus:z-50">
+            Skip to main content
+          </a>
+          <div className="grid lg:grid-cols-[72px_1fr] xl:grid-cols-[260px_1fr] min-h-screen">
+            <Sidebar />
+            <main id="main" className="px-4 lg:px-6 xl:px-8 py-6 lg:py-8 overflow-y-auto min-w-0">
+              {children}
+            </main>
+          </div>
+          <Analytics />
+          <SpeedInsights />
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }

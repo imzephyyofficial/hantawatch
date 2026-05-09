@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { SignInButton, UserButton, useAuth } from "@clerk/nextjs";
 import {
   BarChart3,
   Database,
@@ -31,6 +32,7 @@ const NAV = [
 export function Sidebar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const { isSignedIn, isLoaded } = useAuth();
 
   const isActive = (matches: string[]) =>
     matches.some((m) => (m === "/" ? pathname === "/" : pathname.startsWith(m)));
@@ -107,6 +109,26 @@ export function Sidebar() {
             );
           })}
         </nav>
+
+        <div className="px-6 lg:px-2 xl:px-6 pt-4 mb-4 border-t border-[var(--color-border-soft)] flex items-center justify-between gap-2 min-h-[40px]">
+          {isLoaded && !isSignedIn && (
+            <SignInButton mode="modal">
+              <button className="text-xs text-[var(--color-fg-secondary)] hover:text-[var(--color-fg)] font-medium">
+                <span className="lg:hidden xl:inline">Sign in</span>
+                <span className="hidden lg:inline xl:hidden">↪</span>
+              </button>
+            </SignInButton>
+          )}
+          {isLoaded && isSignedIn && (
+            <>
+              <Link href="/account" className="text-xs text-[var(--color-fg-secondary)] hover:text-[var(--color-fg)] font-medium" title="Account">
+                <span className="lg:hidden xl:inline">Account</span>
+                <span className="hidden lg:inline xl:hidden">⚙</span>
+              </Link>
+              <UserButton />
+            </>
+          )}
+        </div>
 
         <div className="px-6 lg:px-2 xl:px-6 pt-4 border-t border-[var(--color-border-soft)] flex items-center justify-between text-[11px] text-[var(--color-fg-muted)] lg:flex-col lg:items-center lg:gap-2 xl:flex-row xl:items-center">
           <span>v4.0.0</span>

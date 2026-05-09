@@ -1,23 +1,23 @@
 /**
- * Graceful DB client. While Phase 2 (Neon Postgres) is not yet provisioned,
- * `db` is null and all reads fall back to the bundled fixtures in lib/data.ts.
+ * Drizzle client over @neondatabase/serverless (HTTP transport — works in
+ * edge + serverless without a long-lived TCP pool).
  *
- * After provisioning Neon via Vercel Marketplace:
- *   1. `npm install drizzle-orm @neondatabase/serverless drizzle-kit`
- *   2. uncomment the imports below
- *   3. run `drizzle-kit generate` and `drizzle-kit migrate`
+ * Vercel-Native Neon integration injects DATABASE_URL at runtime; locally
+ * the value comes from `vercel env pull`. If neither is present, `db` is
+ * null and callers should degrade gracefully (e.g. user-facing pages just
+ * skip account features).
  */
 
-export const isDbReady = Boolean(process.env.DATABASE_URL);
+import { drizzle } from "drizzle-orm/neon-http";
+import { neon } from "@neondatabase/serverless";
+import * as schema from "./schema";
 
-// Uncomment after `npm install drizzle-orm @neondatabase/serverless`:
-//
-// import { neon } from "@neondatabase/serverless";
-// import { drizzle } from "drizzle-orm/neon-http";
-// import * as schema from "./schema";
-//
-// export const db = isDbReady
-//   ? drizzle(neon(process.env.DATABASE_URL!), { schema })
-//   : null;
+const url = process.env.DATABASE_URL;
 
-export const db: null = null;
+export const isDbReady = Boolean(url);
+
+export const db = url ? drizzle(neon(url), { schema, casing: "snake_case" }) : null;
+
+export type DB = NonNullable<typeof db>;
+
+export * as schema from "./schema";
