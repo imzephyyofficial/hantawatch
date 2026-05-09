@@ -18,7 +18,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com data:",
       `img-src 'self' data: blob: https: ${CLERK_HOSTS}`,
-      `connect-src 'self' ${CLERK_HOSTS} ${VERCEL_INSIGHTS} https://www.who.int https://data.cdc.gov https://www.cdc.gov https://en.wikipedia.org`,
+      `connect-src 'self' ${CLERK_HOSTS} ${VERCEL_INSIGHTS} https://www.who.int https://data.cdc.gov https://www.cdc.gov https://en.wikipedia.org https://wikimedia.org https://www.ebi.ac.uk https://api.biorxiv.org https://api.gbif.org https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com`,
       `frame-src 'self' ${CLERK_HOSTS}`,
       "worker-src 'self' blob:",
       "form-action 'self'",

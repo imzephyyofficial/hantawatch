@@ -11,6 +11,7 @@ import {
   FileText,
   GitCompare,
   LayoutDashboard,
+  Map as MapIcon,
   Menu,
   Search,
   ShieldAlert,
@@ -21,6 +22,7 @@ import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/", label: "Dashboard", Icon: LayoutDashboard, match: ["/", "/dashboard"] },
+  { href: "/map", label: "Live map", Icon: MapIcon, match: ["/map"] },
   { href: "/surveillance", label: "Surveillance", Icon: Search, match: ["/surveillance"] },
   { href: "/outbreaks", label: "Outbreaks", Icon: Siren, match: ["/outbreaks"] },
   { href: "/risk", label: "Risk index", Icon: ShieldAlert, match: ["/risk"] },
